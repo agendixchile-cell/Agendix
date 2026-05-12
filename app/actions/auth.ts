@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import {
   loginSchema,
   registerSchema,
@@ -108,6 +109,8 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
   const { nombre, email, password, nombreCentro } = parsed.data
 
   const supabase = await createClient()
+  const adminSupabase = createAdminClient()
+  const provisioningClient = adminSupabase ?? supabase
 
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email,
@@ -138,10 +141,31 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
   let centroId: string | null = null
   let ultimoErrorCentro: string | null = null
 
+  const { error: profileError } = await provisioningClient
+    .from('profiles')
+    .upsert(
+      {
+        id: userId,
+        email: email.trim().toLowerCase(),
+        nombre: nombre.trim(),
+      },
+      { onConflict: 'id' }
+    )
+
+  if (profileError) {
+    return {
+      error: errorSupabaseEnEspanol(
+        profileError.message,
+        'No pudimos preparar tu perfil. Intenta nuevamente.',
+        profileError.code
+      ),
+    }
+  }
+
   for (let intento = 0; intento < 50; intento++) {
     const slug = intento === 0 ? slugBase : `${slugBase}-${intento}`
 
-    const { data: centro, error: centroError } = await supabase
+    const { data: centro, error: centroError } = await provisioningClient
       .from('centros')
       .insert({ nombre: nombreCentro, slug })
       .select('id')
@@ -175,7 +199,7 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     }
   }
 
-  const { error: miembroError } = await supabase
+  const { error: miembroError } = await provisioningClient
     .from('miembros_centro')
     .insert({ centro_id: centroId, profile_id: userId, rol: 'admin' })
 
@@ -189,7 +213,7 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     }
   }
 
-  await supabase.from('salas').insert({
+  await provisioningClient.from('salas').insert({
     centro_id: centroId,
     nombre: 'Consulta general',
     descripcion: 'Espacio base para agenda clínica',
@@ -197,7 +221,7 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     activa: true,
   })
 
-  await supabase.from('servicios').insert({
+  await provisioningClient.from('servicios').insert({
     centro_id: centroId,
     nombre: 'Consulta',
     descripcion: 'Servicio base para comenzar a agendar',
@@ -213,6 +237,13 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     })
 
     if (signInError) {
+      if (signInError.message.toLowerCase().includes('email not confirmed')) {
+        return {
+          error:
+            'Cuenta creada. Revisa tu correo para confirmar el email y luego inicia sesión.',
+        }
+      }
+
       return {
         error: errorSupabaseEnEspanol(
           signInError.message,
