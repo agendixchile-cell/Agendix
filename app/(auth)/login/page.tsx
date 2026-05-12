@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
-import { AgendixBrand } from '@/components/brand/agendix-brand'
+import { AgendixWordmark } from '@/components/brand/agendix-brand'
 import { Button } from '@/components/ui/button'
 import { FeedbackBanner, type FeedbackMessage } from '@/components/ui/feedback-banner'
 import { Field } from '@/components/ui/field'
@@ -57,15 +57,15 @@ export default function LoginPage() {
   })
 
   return (
-    <div className="mx-auto w-full max-w-sm">
-      <div className="mb-6 flex flex-col items-center text-center">
-        <AgendixBrand subtitle="Agenda y operación clínica" className="justify-center" />
-        <p className="mt-3 text-sm leading-6 text-slate-500">
+    <div className="mx-auto w-full max-w-md">
+      <div className="mb-5 flex flex-col items-center text-center">
+        <AgendixWordmark priority className="mx-auto" />
+        <p className="mt-1 max-w-xs text-sm leading-6 text-slate-500">
           Entra para revisar agenda, pacientes y operación del día.
         </p>
       </div>
 
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-900/[0.055] sm:p-7">
+      <div className="rounded-2xl border border-[#ebe7df] bg-white/85 p-6 shadow-xl shadow-slate-900/[0.06] sm:p-7">
         <h2 className="mb-1 text-xl font-semibold text-slate-900">
           Iniciar sesión
         </h2>

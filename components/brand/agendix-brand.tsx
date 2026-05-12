@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { cn } from '@/lib/utils'
 
 type AgendixBrandProps = {
@@ -5,6 +6,34 @@ type AgendixBrandProps = {
   compact?: boolean
   className?: string
   textClassName?: string
+}
+
+type AgendixWordmarkProps = {
+  className?: string
+  priority?: boolean
+}
+
+export function AgendixWordmark({
+  className,
+  priority = false,
+}: AgendixWordmarkProps) {
+  return (
+    <div
+      className={cn(
+        'relative h-24 w-72 overflow-hidden bg-[#FCFBF9] sm:h-28 sm:w-80',
+        className
+      )}
+    >
+      <Image
+        src="/agendix-login-logo.jpeg"
+        alt="Agendix"
+        fill
+        priority={priority}
+        sizes="(min-width: 640px) 320px, 288px"
+        className="object-cover"
+      />
+    </div>
+  )
 }
 
 export function AgendixBrand({
