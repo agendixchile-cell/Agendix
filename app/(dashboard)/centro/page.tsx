@@ -1,0 +1,98 @@
+import { redirect } from 'next/navigation'
+import { CentroManager } from '@/components/centro/centro-manager'
+import { demoCentro, demoRecordatoriosConfig } from '@/lib/centro/demo'
+import { defaultHorariosCentro } from '@/lib/centro/horarios'
+import type { CentroConfig, CentroMembership } from '@/lib/centro/types'
+import { createClient } from '@/lib/supabase/server'
+import { demoUser, isDemoMode } from '@/lib/auth/demo'
+import { getHorariosCentro, getRecordatoriosCentro } from '@/app/actions/centro'
+
+type MembershipQueryRow = {
+  rol: CentroMembership['rol']
+  centros: CentroConfig | null
+}
+
+export default async function CentroPage() {
+  const demoMode = isDemoMode()
+
+  if (demoMode) {
+    return (
+      <CentroManager
+        initialCentro={demoCentro}
+        initialHorarios={defaultHorariosCentro}
+        initialRecordatorios={demoRecordatoriosConfig}
+        rol="admin"
+        demoMode
+      />
+    )
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  const { data, error } = await supabase
+    .from('miembros_centro')
+    .select(
+      `
+        rol,
+        centros!inner(id,nombre,slug,rut,direccion,telefono,email,logo_url,activo,created_at,updated_at)
+      `
+    )
+    .eq('profile_id', user.id)
+    .eq('activo', true)
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    return (
+      <CentroManager
+        initialCentro={{
+          ...demoCentro,
+          nombre: demoUser.centro,
+        }}
+        initialHorarios={defaultHorariosCentro}
+        initialRecordatorios={demoRecordatoriosConfig}
+        rol="profesional"
+        demoMode={false}
+        loadError="No pudimos cargar la configuración del centro."
+      />
+    )
+  }
+
+  const membership = data as unknown as MembershipQueryRow | null
+
+  if (!membership?.centros) {
+    return (
+      <CentroManager
+        initialCentro={{
+          ...demoCentro,
+          nombre: demoUser.centro,
+        }}
+        initialHorarios={defaultHorariosCentro}
+        initialRecordatorios={demoRecordatoriosConfig}
+        rol="profesional"
+        demoMode={false}
+        loadError={`No encontramos un centro asociado a ${user.email ?? demoUser.nombre}.`}
+      />
+    )
+  }
+
+  const [horarios, recordatorios] = await Promise.all([
+    getHorariosCentro(membership.centros.id),
+    getRecordatoriosCentro(membership.centros.id),
+  ])
+
+  return (
+    <CentroManager
+      initialCentro={membership.centros}
+      initialHorarios={horarios}
+      initialRecordatorios={recordatorios}
+      rol={membership.rol}
+      demoMode={false}
+    />
+  )
+}

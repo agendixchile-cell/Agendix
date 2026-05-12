@@ -1,0 +1,43 @@
+import type { ProfesionalListItem } from './types'
+
+export const demoProfesionales: ProfesionalListItem[] = [
+  {
+    id: 'demo-miembro-1',
+    profile_id: 'demo-profile-1',
+    nombre: 'Camila Rojas',
+    apellido: null,
+    email: 'camila@agendix.demo',
+    telefono: '+56 9 6123 4567',
+    especialidad: 'Psicología clínica',
+    rol: 'profesional',
+    activo: true,
+    created_at: '2026-01-08T10:00:00.000Z',
+    updated_at: '2026-01-08T10:00:00.000Z',
+  },
+  {
+    id: 'demo-miembro-2',
+    profile_id: 'demo-profile-2',
+    nombre: 'Matias Contreras',
+    apellido: null,
+    email: 'matias@agendix.demo',
+    telefono: '+56 9 7345 9012',
+    especialidad: 'Kinesiología',
+    rol: 'profesional',
+    activo: true,
+    created_at: '2026-01-06T14:30:00.000Z',
+    updated_at: '2026-01-06T14:30:00.000Z',
+  },
+  {
+    id: 'demo-miembro-3',
+    profile_id: 'demo-profile-3',
+    nombre: 'Sofia Araya',
+    apellido: null,
+    email: 'sofia@agendix.demo',
+    telefono: '+56 9 8456 1200',
+    especialidad: 'Fonoaudiología',
+    rol: 'profesional',
+    activo: false,
+    created_at: '2026-01-04T09:15:00.000Z',
+    updated_at: '2026-01-04T09:15:00.000Z',
+  },
+]

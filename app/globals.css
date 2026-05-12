@@ -1,26 +1,286 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --agendix-primary: #F9735B;
+  --agendix-primary-dark: #E85C45;
+  --agendix-primary-950: #7A2519;
+  --agendix-ink: #22211F;
+  --agendix-secondary: #22C55E;
+  --agendix-secondary-dark: #16A34A;
+  --agendix-accent: #3B82F6;
+  --agendix-lavender: #7c6df2;
+  --agendix-surface: #ffffff;
+  --agendix-surface-raised: #ffffff;
+  --agendix-background: #FAFAF8;
+  --agendix-soft: #FFF4EF;
+  --agendix-border: #E5E7EB;
+  --agendix-border-strong: #CBD5E1;
+  --agendix-text: #1E293B;
+  --agendix-muted: #64748B;
+  --agendix-success: #22C55E;
+  --agendix-warning: #F59E0B;
+  --agendix-danger: #EF4444;
+  --agendix-info: #3B82F6;
+  --background: var(--agendix-background);
+  --foreground: var(--agendix-text);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-ink: var(--agendix-ink);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-orange-50: #FFF4EF;
+  --color-orange-100: #FFE8DC;
+  --color-orange-200: #FFD0BC;
+  --color-orange-300: #FFB09A;
+  --color-orange-400: #FB9080;
+  --color-orange-500: #F9735B;
+  --color-orange-600: #E85C45;
+  --color-orange-700: #C8432E;
+  --color-orange-800: #A33325;
+  --color-orange-900: #7A2519;
+  --color-orange-950: #451209;
+
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #F59E0B;
+
+  --color-emerald-50: #F0FDF4;
+  --color-emerald-100: #DCFCE7;
+  --color-emerald-200: #BBF7D0;
+  --color-emerald-500: #22C55E;
+  --color-emerald-600: #16A34A;
+  --color-emerald-700: #15803D;
+
+  --color-sky-50: #EFF6FF;
+  --color-sky-100: #DBEAFE;
+  --color-sky-200: #BFDBFE;
+  --color-sky-500: #3B82F6;
+  --color-sky-600: #2563EB;
+  --color-sky-700: #1D4ED8;
+
+  --color-violet-50: #f5f3ff;
+  --color-violet-100: #ede9fe;
+  --color-violet-200: #ddd6fe;
+  --color-violet-500: #8b7cf6;
+  --color-violet-600: #7c3aed;
+
+  --color-slate-50: #FAFAF8;
+  --color-slate-100: #F8FAFC;
+  --color-slate-200: #E5E7EB;
+  --color-slate-300: #CBD5E1;
+  --color-slate-400: #94A3B8;
+  --color-slate-500: #64748B;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1E293B;
+  --color-slate-900: #1E293B;
+  --color-slate-950: #1E293B;
+
+  --color-red-50: #FEF2F2;
+  --color-red-100: #FEE2E2;
+  --color-red-200: #FECACA;
+  --color-red-500: #EF4444;
+  --color-red-600: #DC2626;
+  --color-red-700: #B91C1C;
+
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.25rem;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: #FFF4EF;
+  color: #7A2519;
+}
+
+.agendix-input {
+  width: 100%;
+  min-height: 2.625rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--agendix-border);
+  background: #ffffff;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--agendix-text);
+  outline: none;
+  box-shadow: 0 1px 1px rgb(24 24 27 / 0.02);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+.agendix-input::placeholder {
+  color: #94A3B8;
+}
+
+.agendix-input:focus {
+  border-color: var(--agendix-primary);
+  background: #ffffff;
+  box-shadow:
+    0 0 0 3px rgb(249 115 91 / 0.16),
+    0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.agendix-input[aria-invalid="true"] {
+  border-color: rgb(239 68 68 / 0.55);
+  background: #fffafa;
+}
+
+.agendix-input[aria-invalid="true"]:focus {
+  border-color: var(--agendix-danger);
+  box-shadow:
+    0 0 0 3px rgb(239 68 68 / 0.12),
+    0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.agendix-input:disabled {
+  background: #F1F5F9;
+  color: var(--agendix-muted);
+}
+
+/* ── Select ────────────────────────────────────────────────── */
+/* Inherits all .agendix-input token values; adds a consistent  */
+/* chevron arrow and suppresses the native OS dropdown widget.  */
+.agendix-select {
+  width: 100%;
+  min-height: 2.625rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--agendix-border);
+  background-color: #ffffff;
+  /* Right-side padding reserves space for the custom chevron */
+  padding: 0.625rem 2.5rem 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--agendix-text);
+  outline: none;
+  box-shadow: 0 1px 1px rgb(24 24 27 / 0.02);
+  /* Suppress native browser arrow */
+  appearance: none;
+  -webkit-appearance: none;
+  /* Custom chevron: slate-400 (#94A3B8) */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+.agendix-select:focus {
+  border-color: var(--agendix-primary);
+  background-color: #ffffff;
+  box-shadow:
+    0 0 0 3px rgb(249 115 91 / 0.16),
+    0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.agendix-select[aria-invalid="true"] {
+  border-color: rgb(239 68 68 / 0.55);
+  background-color: #fffafa;
+}
+
+.agendix-select[aria-invalid="true"]:focus {
+  border-color: var(--agendix-danger);
+  box-shadow:
+    0 0 0 3px rgb(239 68 68 / 0.12),
+    0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.agendix-select:disabled {
+  background-color: #F1F5F9;
+  color: var(--agendix-muted);
+  cursor: not-allowed;
+  /* Dimmed chevron when disabled */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23CBD5E1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+.agendix-card {
+  border: 1px solid var(--agendix-border);
+  background: var(--agendix-surface);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.045), 0 1px 2px rgb(15 23 42 / 0.035);
+}
+
+.agendix-surface {
+  border: 1px solid rgb(229 231 235 / 0.78);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.agendix-soft-panel {
+  border: 1px solid rgb(229 231 235 / 0.80);
+  background: #FFF4EF;
+}
+
+.agendix-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.agendix-table th {
+  color: #64748B;
+  letter-spacing: 0;
+  font-size: 0.6875rem;
+}
+
+.agendix-table tbody tr {
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.agendix-table tbody tr:hover {
+  background: #FAFAF8;
+}
+
+.agendix-kbd-surface {
+  border: 1px solid var(--agendix-border);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+@keyframes agendix-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes agendix-panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+.agendix-modal-overlay {
+  animation: agendix-overlay-in 180ms ease both;
+}
+
+.agendix-modal-panel {
+  animation: agendix-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes agendix-slide-right-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.agendix-panel-slide {
+  animation: agendix-slide-right-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }

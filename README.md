@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agendix
 
-## Getting Started
+Agendix es una aplicación web para gestión de agenda clínica, pacientes, reservas, profesionales, salas, servicios y portal público de agendamiento.
 
-First, run the development server:
+## Stack
+
+- Next.js 16
+- React 19
+- Tailwind CSS 4
+- Supabase Auth, Database y Edge Functions
+- Vercel para despliegue web
+
+## Desarrollo local
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La app queda disponible en `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Variables de entorno
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Crea un archivo `.env.local` usando `.env.example` como referencia:
 
-## Learn More
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=tu-publishable-o-anon-key
+SUPABASE_SERVICE_ROLE_KEY=tu-service-role-key
+```
 
-To learn more about Next.js, take a look at the following resources:
+`SUPABASE_SERVICE_ROLE_KEY` es sensible y solo debe configurarse en entornos server-side como Vercel o Supabase. No debe exponerse en el cliente.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run lint
+npm run build
+npm run start
+```
 
-## Deploy on Vercel
+## Supabase
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Las migraciones viven en `supabase/migrations`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Para desplegar la base de datos en un proyecto nuevo de Supabase:
+
+```bash
+supabase link --project-ref PROJECT_REF
+supabase db push
+```
+
+## Recordatorios automaticos
+
+Agendix incluye una Edge Function para recordatorios de reserva:
+
+- Email 48 horas antes con Resend.
+- WhatsApp 24 horas antes con WhatsApp Business Cloud API.
+- Modo mock para WhatsApp mientras no existan credenciales reales.
+- Registro de intentos en `recordatorio_envios`.
+
+Variables de la Edge Function, configuradas como secretos en Supabase:
+
+```bash
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...
+REMINDERS_CRON_SECRET=...
+REMINDERS_DRY_RUN=false
+REMINDERS_TIME_ZONE=America/Santiago
+
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL="Agendix <recordatorios@tu-dominio.cl>"
+
+WHATSAPP_MODE=mock
+WHATSAPP_ACCESS_TOKEN=...
+WHATSAPP_PHONE_NUMBER_ID=...
+WHATSAPP_GRAPH_VERSION=v25.0
+WHATSAPP_TEMPLATE_NAME=agendix_reserva_24h
+WHATSAPP_TEMPLATE_LANGUAGE=es_CL
+```
+
+Despliegue de recordatorios:
+
+```bash
+supabase secrets set --env-file ./supabase/.env
+supabase functions deploy send-booking-reminders
+```
+
+Luego ejecuta `supabase/cron/send-booking-reminders.sql` en Supabase SQL Editor, reemplazando `PROJECT_REF`, `SUPABASE_ANON_KEY` y `A_LONG_RANDOM_CRON_SECRET`.
+
+## Deploy en Vercel
+
+1. Importa este repositorio desde GitHub en Vercel.
+2. Configura las variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.
+3. Ejecuta el deploy.
+4. Agrega el dominio final en Supabase Auth como Site URL y Redirect URL.
