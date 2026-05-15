@@ -90,7 +90,8 @@ export type ReservaActionState =
     }
 
 export const reservaEstadoLabels: Record<EstadoReserva, string> = {
-  pendiente: 'Pendiente',
+  pendiente: 'Reservada',
+  en_espera: 'En espera',
   confirmada: 'Confirmada',
   cancelada: 'Cancelada',
   completada: 'Completada',
@@ -99,6 +100,7 @@ export const reservaEstadoLabels: Record<EstadoReserva, string> = {
 
 export const reservaEstados: EstadoReserva[] = [
   'pendiente',
+  'en_espera',
   'confirmada',
   'cancelada',
   'completada',

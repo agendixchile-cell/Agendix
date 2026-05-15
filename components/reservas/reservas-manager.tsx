@@ -235,7 +235,8 @@ function patientName(paciente: ReservaPacienteOption) {
   return [paciente.nombre, paciente.apellido].filter(Boolean).join(' ')
 }
 
-function estadoTone(estado: EstadoReserva): 'orange' | 'green' | 'slate' | 'red' {
+function estadoTone(estado: EstadoReserva): 'orange' | 'green' | 'blue' | 'slate' | 'red' {
+  if (estado === 'en_espera') return 'blue'
   if (estado === 'confirmada') return 'green'
   if (estado === 'cancelada') return 'red'
   if (estado === 'completada') return 'slate'
@@ -435,6 +436,9 @@ export function ReservasManager({
   ).length
   const pendingTodayCount = todayReservas.filter(
     (reserva) => reserva.estado === 'pendiente'
+  ).length
+  const waitingTodayCount = todayReservas.filter(
+    (reserva) => reserva.estado === 'en_espera'
   ).length
   const totalConfirmedCount = reservas.filter(
     (reserva) => reserva.estado === 'confirmada'
@@ -1208,7 +1212,7 @@ export function ReservasManager({
                 total={todayCount}
                 confirmed={confirmedTodayCount}
                 pending={pendingTodayCount}
-                attentionNeeded={attentionNeededCount}
+                waiting={waitingTodayCount}
               />
               <TodayAgendaPanel
                 reservas={todayReservas}
@@ -1231,6 +1235,7 @@ export function ReservasManager({
           )}
           onClose={() => setSelectedReserva(null)}
           onEdit={openEdit}
+          onWait={(reserva) => updateEstado(reserva, 'en_espera')}
           onComplete={(reserva) => updateEstado(reserva, 'completada')}
           onNoShow={(reserva) => updateAsistencia(reserva, 'no_asistio')}
           onCancel={(reserva) => updateEstado(reserva, 'cancelada')}
@@ -1640,6 +1645,14 @@ function appointmentStateClasses(reserva: ReservaListItem) {
     }
   }
 
+  if (reserva.estado === 'en_espera') {
+    return {
+      card: 'border-sky-100 bg-sky-50/70 text-sky-900 hover:border-sky-200',
+      accent: 'bg-sky-500',
+      soft: 'bg-sky-100 text-sky-700',
+    }
+  }
+
   if (reserva.estado === 'cancelada') {
     return {
       card: 'border-slate-200 bg-slate-50 text-slate-400 opacity-70 hover:border-slate-300',
@@ -1855,10 +1868,10 @@ function CalendarView({
             Confirmadas
           </span>
           <span className="whitespace-nowrap rounded-full bg-amber-50 px-2.5 py-1 text-center text-amber-700 ring-1 ring-amber-200/60">
-            Pendientes
+            Reservadas
           </span>
-          <span className="whitespace-nowrap rounded-full bg-red-50 px-2.5 py-1 text-center text-red-600 ring-1 ring-red-200/60">
-            Alertas
+          <span className="whitespace-nowrap rounded-full bg-sky-50 px-2.5 py-1 text-center text-sky-700 ring-1 ring-sky-200/60">
+            En espera
           </span>
         </div>
       </div>
@@ -1989,10 +2002,16 @@ function WeekCalendar({
                 !!horario?.activo &&
                 hour >= parseHour(horario.inicio) &&
                 hour < parseHour(horario.fin)
-              const slotReservas = reservas.filter((reserva) => {
-                const startsAt = new Date(reserva.fecha_inicio)
-                return dateKey(reserva.fecha_inicio) === dayKey && startsAt.getHours() === hour
-              })
+              const slotReservas = reservas
+                .filter((reserva) => {
+                  const startsAt = new Date(reserva.fecha_inicio)
+                  return dateKey(reserva.fecha_inicio) === dayKey && startsAt.getHours() === hour
+                })
+                .sort(
+                  (a, b) =>
+                    new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
+                )
+              const compactSlot = slotReservas.length > 2
 
               return (
                 <div
@@ -2002,18 +2021,14 @@ function WeekCalendar({
                   }`}
                 >
                   <div className="space-y-1">
-                    {slotReservas.slice(0, 2).map((reserva) => (
+                    {slotReservas.map((reserva) => (
                       <AppointmentCard
                         key={reserva.id}
                         reserva={reserva}
                         onOpen={onOpenReserva}
+                        compact={compactSlot}
                       />
                     ))}
-                    {slotReservas.length > 2 && (
-                      <p className="px-1 text-[11px] font-medium text-slate-400">
-                        +{slotReservas.length - 2}
-                      </p>
-                    )}
                     {isOpen && slotReservas.length === 0 && (
                       <button
                         type="button"
@@ -2352,9 +2367,9 @@ function AgendaMetricCards({
       />
       <AgendaMetricCard
         icon={CheckCircle2}
-        label="Pendientes"
+        label="Reservadas"
         value={pending}
-        description="Reservas por confirmar"
+        description="Reservas tomadas"
         tone="amber"
       />
       <AgendaMetricCard
@@ -2452,9 +2467,9 @@ function ReservationsManagementView({
         />
         <AgendaMetricCard
           icon={Clock3}
-          label="Pendientes"
+          label="Reservadas"
           value={pending}
-          description="Necesitan revisión"
+          description="Tomadas en agenda"
           tone="amber"
         />
         <AgendaMetricCard
@@ -2711,13 +2726,13 @@ function TodaySummary({
   total,
   confirmed,
   pending,
-  attentionNeeded,
+  waiting,
 }: {
   nextReserva?: ReservaListItem
   total: number
   confirmed: number
   pending: number
-  attentionNeeded: number
+  waiting: number
 }) {
   return (
     <section className="agendix-surface rounded-2xl p-4">
@@ -2755,8 +2770,8 @@ function TodaySummary({
 
       <div className="mt-3 grid grid-cols-3 gap-2">
         <SummaryPill label="Confirmadas" value={confirmed} tone="green" />
-        <SummaryPill label="Pendientes" value={pending} tone="amber" />
-        <SummaryPill label="Alertas" value={attentionNeeded} tone="red" />
+        <SummaryPill label="Reservadas" value={pending} tone="amber" />
+        <SummaryPill label="En espera" value={waiting} tone="blue" />
       </div>
     </section>
   )
@@ -2769,12 +2784,13 @@ function SummaryPill({
 }: {
   label: string
   value: number
-  tone: 'green' | 'amber' | 'orange' | 'red'
+  tone: 'green' | 'amber' | 'orange' | 'blue' | 'red'
 }) {
   const tones = {
     green: 'bg-emerald-50 text-emerald-700 ring-emerald-200/60',
     amber: 'bg-amber-50 text-amber-700 ring-amber-200/60',
     orange: 'bg-amber-50 text-amber-700 ring-amber-200/60',
+    blue: 'bg-sky-50 text-sky-700 ring-sky-200/60',
     red: 'bg-red-50 text-red-600 ring-red-200/60',
   }
 
@@ -2882,6 +2898,7 @@ function AppointmentDetailsPanel({
   hasEvolucion,
   onClose,
   onEdit,
+  onWait,
   onComplete,
   onNoShow,
   onCancel,
@@ -2894,6 +2911,7 @@ function AppointmentDetailsPanel({
   hasEvolucion: boolean
   onClose: () => void
   onEdit: (reserva: ReservaListItem) => void
+  onWait: (reserva: ReservaListItem) => void
   onComplete: (reserva: ReservaListItem) => void
   onNoShow: (reserva: ReservaListItem) => void
   onCancel: (reserva: ReservaListItem) => void
@@ -2965,6 +2983,16 @@ function AppointmentDetailsPanel({
             >
               <CheckCircle2 size={17} aria-hidden="true" />
               Marcar como completada
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => onWait(reserva)}
+              disabled={isPending || reserva.estado === 'en_espera'}
+              className="justify-start"
+            >
+              <Clock3 size={17} aria-hidden="true" />
+              Marcar en espera
             </Button>
             <Button
               type="button"

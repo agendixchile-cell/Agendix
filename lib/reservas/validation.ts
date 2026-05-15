@@ -33,6 +33,7 @@ export const reservaSchema = z
       .regex(/^\d{2}:\d{2}$/, 'Selecciona una hora válida'),
     estado: z.enum([
       'pendiente',
+      'en_espera',
       'confirmada',
       'cancelada',
       'completada',

@@ -9,6 +9,7 @@ export type Json =
 export type RolCentro = 'admin' | 'profesional' | 'recepcion'
 export type EstadoReserva =
   | 'pendiente'
+  | 'en_espera'
   | 'confirmada'
   | 'cancelada'
   | 'completada'
