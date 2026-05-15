@@ -172,3 +172,56 @@ export async function updatePacienteAction(
     paciente,
   }
 }
+
+export async function deletePacienteAction(
+  id: string
+): Promise<PacienteActionState> {
+  if (!id) {
+    return { ok: false, message: 'Selecciona un paciente válido.' }
+  }
+
+  if (isDemoMode()) {
+    return { ok: true, message: 'Paciente eliminado en modo demo.' }
+  }
+
+  const { supabase, centroId, error } = await getCentroId()
+
+  if (error || !centroId) {
+    return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
+  }
+
+  const { data: existingPaciente, error: lookupError } = await supabase
+    .from('pacientes')
+    .select('id')
+    .eq('id', id)
+    .eq('centro_id', centroId)
+    .maybeSingle()
+
+  if (lookupError) {
+    return { ok: false, message: supabaseError(lookupError.message) }
+  }
+
+  if (!existingPaciente) {
+    return { ok: false, message: 'No encontramos el paciente seleccionado.' }
+  }
+
+  const { error: deleteError } = await supabase
+    .from('pacientes')
+    .delete()
+    .eq('id', id)
+    .eq('centro_id', centroId)
+
+  if (deleteError) {
+    return { ok: false, message: supabaseError(deleteError.message) }
+  }
+
+  revalidatePath('/pacientes')
+  revalidatePath('/agenda')
+  revalidatePath('/reservas')
+  revalidatePath('/fichas-clinicas')
+
+  return {
+    ok: true,
+    message: 'Paciente eliminado correctamente.',
+  }
+}

@@ -15,11 +15,13 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Trash2,
   UserRound,
   UsersRound,
 } from 'lucide-react'
 import {
   createPacienteAction,
+  deletePacienteAction,
   updatePacienteAction,
 } from '@/app/actions/pacientes'
 import { Badge } from '@/components/ui/badge'
@@ -203,6 +205,40 @@ export function PacientesManager({
   const resetDemo = () => {
     saveDemoPacientes(initialPacientes)
     setFeedback({ type: 'success', message: 'Demo restablecido.' })
+  }
+
+  const handleDelete = (paciente: PacienteListItem) => {
+    const pacienteName = fullName(paciente)
+    const confirmed = window.confirm(
+      `¿Eliminar a ${pacienteName}? Esta acción no se puede deshacer y también quitará sus reservas y fichas asociadas.`
+    )
+
+    if (!confirmed) return
+
+    setFeedback(null)
+
+    if (demoMode) {
+      saveDemoPacientes(
+        pacientes.filter((currentPaciente) => currentPaciente.id !== paciente.id)
+      )
+      setFeedback({ type: 'success', message: 'Paciente eliminado en modo demo.' })
+      return
+    }
+
+    startTransition(async () => {
+      const result = await deletePacienteAction(paciente.id)
+
+      if (!result.ok) {
+        setFeedback({ type: 'error', message: result.message })
+        return
+      }
+
+      setPacientes((current) =>
+        current.filter((currentPaciente) => currentPaciente.id !== paciente.id)
+      )
+      setFeedback({ type: 'success', message: result.message })
+      router.refresh()
+    })
   }
 
   const handleDemoSave = (values: PacienteFormValues) => {
@@ -392,7 +428,12 @@ export function PacientesManager({
             icon={Search}
           />
         ) : (
-          <PacientesList pacientes={filteredPacientes} onEdit={openEdit} />
+          <PacientesList
+            pacientes={filteredPacientes}
+            onEdit={openEdit}
+            onDelete={handleDelete}
+            disabled={isPending}
+          />
         )}
       </section>
 
@@ -502,9 +543,13 @@ export function PacientesManager({
 function PacientesList({
   pacientes,
   onEdit,
+  onDelete,
+  disabled,
 }: {
   pacientes: PacienteListItem[]
   onEdit: (paciente: PacienteListItem) => void
+  onDelete: (paciente: PacienteListItem) => void
+  disabled: boolean
 }) {
   return (
     <>
@@ -569,9 +614,23 @@ function PacientesList({
                         Ficha
                       </Link>
                     </Button>
-                    <Button variant="secondary" size="sm" onClick={() => onEdit(paciente)}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onEdit(paciente)}
+                      disabled={disabled}
+                    >
                       <Edit3 size={14} aria-hidden="true" />
                       Editar
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => onDelete(paciente)}
+                      disabled={disabled}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                      Eliminar
                     </Button>
                   </div>
                 </td>
@@ -615,9 +674,23 @@ function PacientesList({
                   Ficha
                 </Link>
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => onEdit(paciente)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onEdit(paciente)}
+                disabled={disabled}
+              >
                 <Edit3 size={14} aria-hidden="true" />
                 Editar
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => onDelete(paciente)}
+                disabled={disabled}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+                Eliminar
               </Button>
             </div>
           </article>
