@@ -14,6 +14,14 @@ import type {
   ReservaQueryRow,
 } from '@/lib/reservas/types'
 import { buildReservationReminderRows } from '@/lib/reminders/schedule'
+import {
+  defaultHorariosCentro,
+  getHorarioForDate,
+  normalizeHorarios,
+  timeRangeOverlapsDescanso,
+  timeToMinutes,
+} from '@/lib/centro/horarios'
+import type { HorarioCentro } from '@/lib/centro/types'
 import { createClient } from '@/lib/supabase/server'
 import { getCentroId } from '@/lib/supabase/get-centro-id'
 
@@ -295,6 +303,55 @@ async function findReservationConflict({
   return {}
 }
 
+async function validateReservaHorario({
+  supabase,
+  centroId,
+  values,
+  durationMinutes,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  centroId: string
+  values: ReservaFormValues
+  durationMinutes: number
+}) {
+  const { data, error } = await supabase
+    .from('horarios_centro')
+    .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
+    .eq('centro_id', centroId)
+
+  if (error) {
+    return { error: supabaseError(error.message) }
+  }
+
+  const horarios =
+    data && data.length > 0
+      ? normalizeHorarios(data as HorarioCentro[])
+      : defaultHorariosCentro
+  const horario = getHorarioForDate(
+    new Date(`${values.fecha}T00:00:00`),
+    horarios
+  )
+
+  if (!horario?.activo) {
+    return { error: 'El centro está cerrado en ese día.' }
+  }
+
+  const startMinutes = timeToMinutes(values.hora)
+  const endMinutes = startMinutes + durationMinutes
+  const openStart = timeToMinutes(horario.inicio)
+  const openEnd = timeToMinutes(horario.fin)
+
+  if (startMinutes < openStart || endMinutes > openEnd) {
+    return { error: 'Ese horario queda fuera del horario operativo.' }
+  }
+
+  if (timeRangeOverlapsDescanso(horario, startMinutes, endMinutes)) {
+    return { error: 'Ese horario coincide con el descanso del centro.' }
+  }
+
+  return {}
+}
+
 async function fetchReservaById(
   supabase: Awaited<ReturnType<typeof createClient>>,
   centroId: string,
@@ -355,6 +412,17 @@ export async function createReservaAction(
   }
 
   if (parsed.data.estado !== 'cancelada') {
+    const { error: horarioError } = await validateReservaHorario({
+      supabase,
+      centroId,
+      values: parsed.data,
+      durationMinutes,
+    })
+
+    if (horarioError) {
+      return { ok: false, message: horarioError }
+    }
+
     const { error: conflictError } = await findReservationConflict({
       supabase,
       centroId,
@@ -462,6 +530,19 @@ export async function updateReservaAction(
 
   if (dateError || !fechaInicio || !fechaFin) {
     return { ok: false, message: dateError ?? 'Selecciona fecha y hora válidas.' }
+  }
+
+  if (parsed.data.estado !== 'cancelada') {
+    const { error: horarioError } = await validateReservaHorario({
+      supabase,
+      centroId,
+      values: parsed.data,
+      durationMinutes,
+    })
+
+    if (horarioError) {
+      return { ok: false, message: horarioError }
+    }
   }
 
   const { data: existingReserva, error: lookupError } = await supabase

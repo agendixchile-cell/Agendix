@@ -138,7 +138,7 @@ async function getRealConfigData() {
       .eq('activa', true),
     supabase
       .from('horarios_centro')
-      .select('dia,activo,inicio,fin')
+      .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
       .eq('centro_id', centroId)
       .order('dia', { ascending: true }),
     getRecordatoriosCentro(centroId),

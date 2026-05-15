@@ -43,15 +43,42 @@ export const horarioCentroSchema = z
     activo: z.boolean(),
     inicio: z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
     fin: z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
+    descanso_activo: z.boolean(),
+    descanso_inicio: z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
+    descanso_fin: z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
   })
   .superRefine((value, ctx) => {
     if (!value.activo) return
 
-    if (timeToMinutes(value.fin) <= timeToMinutes(value.inicio)) {
+    const inicio = timeToMinutes(value.inicio)
+    const fin = timeToMinutes(value.fin)
+
+    if (fin <= inicio) {
       ctx.addIssue({
         code: 'custom',
         path: ['fin'],
         message: 'La hora de cierre debe ser posterior a la apertura',
+      })
+    }
+
+    if (!value.descanso_activo) return
+
+    const descansoInicio = timeToMinutes(value.descanso_inicio)
+    const descansoFin = timeToMinutes(value.descanso_fin)
+
+    if (descansoFin <= descansoInicio) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['descanso_fin'],
+        message: 'El fin del descanso debe ser posterior al inicio',
+      })
+    }
+
+    if (descansoInicio < inicio || descansoFin > fin) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['descanso_inicio'],
+        message: 'El descanso debe quedar dentro del horario de atención',
       })
     }
   })

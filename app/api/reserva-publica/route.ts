@@ -6,7 +6,11 @@ import {
   localDateTime,
   timeToMinutes,
 } from '@/lib/booking/availability'
-import { defaultHorariosCentro, normalizeHorarios } from '@/lib/centro/horarios'
+import {
+  defaultHorariosCentro,
+  normalizeHorarios,
+  timeRangeOverlapsDescanso,
+} from '@/lib/centro/horarios'
 import type { HorarioCentro } from '@/lib/centro/types'
 import type { PublicBookingResult } from '@/lib/booking/types'
 import { buildReservationReminderRows } from '@/lib/reminders/schedule'
@@ -140,7 +144,7 @@ export async function POST(request: Request) {
 
   const { data: horariosData } = await supabase
     .from('horarios_centro')
-    .select('dia,activo,inicio,fin')
+    .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
     .eq('centro_id', values.centro_id)
 
   const horarios =
@@ -158,6 +162,13 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json(
       { message: 'Ese horario está fuera del horario de atención.' },
+      { status: 400 }
+    )
+  }
+
+  if (timeRangeOverlapsDescanso(horario, startMinutes, endMinutes)) {
+    return NextResponse.json(
+      { message: 'Ese horario coincide con el descanso del centro.' },
       { status: 400 }
     )
   }

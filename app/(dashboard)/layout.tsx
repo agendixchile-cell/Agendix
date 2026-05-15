@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { AgendixBrand } from '@/components/brand/agendix-brand'
+import { AgendixWordmark } from '@/components/brand/agendix-brand'
 import { DesktopSidebar } from '@/components/dashboard/desktop-sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
@@ -38,14 +38,14 @@ export default async function DashboardLayout({
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200/70 bg-white/95 px-4 backdrop-blur-xl md:hidden">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200/70 bg-[#FCFBF9]/95 px-4 backdrop-blur-xl md:hidden">
           <MobileNav
             userName={nombreUsuario}
             userInitial={inicialUsuario}
             sessionLabel={sessionLabel}
           />
           <div className="absolute left-1/2 -translate-x-1/2">
-            <AgendixBrand compact />
+            <AgendixWordmark className="h-10 w-44 sm:h-11 sm:w-48" />
           </div>
           {/* Spacer para balancear el botón de menú a la izquierda */}
           <div className="h-9 w-9" aria-hidden="true" />

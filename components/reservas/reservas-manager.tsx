@@ -37,10 +37,12 @@ import { FormModal } from '@/components/ui/form-modal'
 import { PageHeader } from '@/components/ui/page-header'
 import { SearchField } from '@/components/ui/search-field'
 import {
-  defaultHorariosCentro,
+  firstBookableTime,
   getHorarioForDate,
   horariosCentroStorageKey,
   normalizeHorarios,
+  timeRangeOverlapsDescanso,
+  timeToMinutes,
 } from '@/lib/centro/horarios'
 import type { HorarioCentro } from '@/lib/centro/types'
 import type { EstadoAsistencia, EstadoReserva } from '@/lib/types/database'
@@ -69,6 +71,7 @@ export type ReservasManagerProps = {
   initialSalas: ReservaSalaOption[]
   initialProfesionales: ReservaProfesionalOption[]
   initialPacientes: ReservaPacienteOption[]
+  initialHorarios: HorarioCentro[]
   initialEvoluciones?: EvolucionSesionListItem[]
   publicBookingPath?: string
   viewMode?: 'agenda' | 'reservas'
@@ -304,6 +307,7 @@ export function ReservasManager({
   initialSalas,
   initialProfesionales,
   initialPacientes,
+  initialHorarios,
   initialEvoluciones = [],
   publicBookingPath,
   viewMode = 'agenda',
@@ -1201,6 +1205,7 @@ export function ReservasManager({
                 reservas={reservasFiltradas}
                 view={calendarView}
                 selectedDate={selectedDate}
+                initialHorarios={initialHorarios}
                 onOpenReserva={setSelectedReserva}
                 onCreateAtSlot={openCreate}
               />
@@ -1771,16 +1776,20 @@ function CalendarView({
   reservas,
   view,
   selectedDate,
+  initialHorarios,
   onOpenReserva,
   onCreateAtSlot,
 }: {
   reservas: ReservaListItem[]
   view: CalendarView
   selectedDate: string
+  initialHorarios: HorarioCentro[]
   onOpenReserva: (reserva: ReservaListItem) => void
   onCreateAtSlot: (slot: SlotSelection) => void
 }) {
-  const [horarios, setHorarios] = useState<HorarioCentro[]>(defaultHorariosCentro)
+  const [horarios, setHorarios] = useState<HorarioCentro[]>(() =>
+    normalizeHorarios(initialHorarios)
+  )
   const selected = selectedDate
     ? new Date(`${selectedDate}T00:00:00`)
     : new Date()
@@ -1818,11 +1827,9 @@ function CalendarView({
     }
 
     window.setTimeout(() => {
-      if (storedHorarios) {
-        setHorarios(storedHorarios)
-      }
+      setHorarios(storedHorarios ?? normalizeHorarios(initialHorarios))
     }, 0)
-  }, [])
+  }, [initialHorarios])
 
   const hourSlots = useMemo(() => {
     const activeHours = visibleDays.flatMap((day) => {
@@ -1998,10 +2005,16 @@ function WeekCalendar({
               const dayKey = dateKey(day.toISOString())
               const isToday = dayKey === todayKey
               const horario = getHorarioForDate(day, horarios)
+              const hourStart = hour * 60
+              const hourEnd = hourStart + 60
               const isOpen =
                 !!horario?.activo &&
-                hour >= parseHour(horario.inicio) &&
-                hour < parseHour(horario.fin)
+                hourStart >= timeToMinutes(horario.inicio) &&
+                hourStart < timeToMinutes(horario.fin) &&
+                !timeRangeOverlapsDescanso(horario, hourStart, hourEnd)
+              const isBreak =
+                !!horario?.activo &&
+                timeRangeOverlapsDescanso(horario, hourStart, hourEnd)
               const slotReservas = reservas
                 .filter((reserva) => {
                   const startsAt = new Date(reserva.fecha_inicio)
@@ -2041,8 +2054,14 @@ function WeekCalendar({
                       </button>
                     )}
                     {!isOpen && slotReservas.length === 0 && (
-                      <div className="flex min-h-11 items-center justify-center rounded-lg bg-slate-50/80 text-[11px] text-slate-200">
-                        —
+                      <div
+                        className={`flex min-h-11 items-center justify-center rounded-lg text-[11px] ${
+                          isBreak
+                            ? 'bg-amber-50 text-amber-500 ring-1 ring-amber-100'
+                            : 'bg-slate-50/80 text-slate-200'
+                        }`}
+                      >
+                        {isBreak ? 'Descanso' : '—'}
                       </div>
                     )}
                   </div>
@@ -2160,10 +2179,16 @@ function MobileDayTimeline({
           const startsAt = new Date(reserva.fecha_inicio)
           return startsAt.getHours() === hour
         })
+        const hourStart = hour * 60
+        const hourEnd = hourStart + 60
         const isOpen =
           !!horario?.activo &&
-          hour >= parseHour(horario.inicio) &&
-          hour < parseHour(horario.fin)
+          hourStart >= timeToMinutes(horario.inicio) &&
+          hourStart < timeToMinutes(horario.fin) &&
+          !timeRangeOverlapsDescanso(horario, hourStart, hourEnd)
+        const isBreak =
+          !!horario?.activo &&
+          timeRangeOverlapsDescanso(horario, hourStart, hourEnd)
 
         return (
           <div key={hour} className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
@@ -2188,8 +2213,14 @@ function MobileDayTimeline({
                 </button>
               )}
               {slotReservas.length === 0 && !isOpen && (
-                <div className="flex min-h-14 items-center justify-center rounded-lg bg-slate-50 text-sm font-semibold text-slate-300">
-                  Cerrado
+                <div
+                  className={`flex min-h-14 items-center justify-center rounded-lg text-sm font-semibold ${
+                    isBreak
+                      ? 'bg-amber-50 text-amber-500 ring-1 ring-amber-100'
+                      : 'bg-slate-50 text-slate-300'
+                  }`}
+                >
+                  {isBreak ? 'Descanso' : 'Cerrado'}
                 </div>
               )}
             </div>
@@ -2242,7 +2273,7 @@ function MobileAgendaList({
             (a, b) =>
               new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
           )
-        const suggestedHour = horario?.activo ? horario.inicio : '09:00'
+        const suggestedHour = firstBookableTime(horario)
 
         return (
           <section

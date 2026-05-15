@@ -103,7 +103,7 @@ export default async function CentroPublicoPage({ params }: Props) {
         .order('nombre'),
       supabase
         .from('horarios_centro')
-        .select('dia,activo,inicio,fin')
+        .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
         .eq('centro_id', centro.id)
         .order('dia'),
       supabase
@@ -320,8 +320,13 @@ function CentroView({
                           {dia?.label}
                         </span>
                         {h.activo ? (
-                          <span className="font-semibold text-slate-900">
+                          <span className="text-right font-semibold text-slate-900">
                             {h.inicio} – {h.fin}
+                            {h.descanso_activo && (
+                              <span className="block text-xs font-medium text-slate-400">
+                                Descanso {h.descanso_inicio} – {h.descanso_fin}
+                              </span>
+                            )}
                           </span>
                         ) : (
                           <span className="text-slate-400">Cerrado</span>

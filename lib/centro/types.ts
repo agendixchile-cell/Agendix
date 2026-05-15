@@ -24,6 +24,9 @@ export type HorarioCentro = {
   activo: boolean
   inicio: string
   fin: string
+  descanso_activo: boolean
+  descanso_inicio: string
+  descanso_fin: string
 }
 
 export type RecordatoriosConfig =

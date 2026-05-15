@@ -109,7 +109,7 @@ export async function getHorariosCentro(centroId: string): Promise<HorarioCentro
 
   const { data } = await supabase
     .from('horarios_centro')
-    .select('dia,activo,inicio,fin')
+    .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
     .eq('centro_id', centroId)
     .order('dia')
 
@@ -161,6 +161,9 @@ export async function updateHorariosAction(
     activo: h.activo,
     inicio: h.inicio,
     fin: h.fin,
+    descanso_activo: h.activo ? h.descanso_activo : false,
+    descanso_inicio: h.descanso_inicio,
+    descanso_fin: h.descanso_fin,
   }))
 
   const { error: upsertError } = await supabase
@@ -172,6 +175,8 @@ export async function updateHorariosAction(
   }
 
   revalidatePath('/centro')
+  revalidatePath('/agenda')
+  revalidatePath('/reservas')
 
   return { ok: true, message: 'Horario operativo actualizado.' }
 }

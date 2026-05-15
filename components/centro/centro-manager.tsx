@@ -34,6 +34,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import {
   defaultHorariosCentro,
   diasSemana,
+  horarioDescansoDurationMinutes,
   horarioDurationMinutes,
   horariosCentroStorageKey,
   normalizeHorarios,
@@ -104,7 +105,11 @@ function completionScore(centro: CentroConfig) {
 }
 
 function weeklyHoursLabel(horarios: HorarioCentro[]) {
-  const hours = weeklyAvailabilityMinutes(horarios) / 60
+  return hoursFromMinutesLabel(weeklyAvailabilityMinutes(horarios))
+}
+
+function hoursFromMinutesLabel(minutes: number) {
+  const hours = minutes / 60
 
   return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} h`
 }
@@ -637,18 +642,21 @@ export function CentroManager({
         <form
           id="horarios-form"
           onSubmit={onHorariosSubmit}
-          className="grid gap-3 p-4 sm:p-5 lg:grid-cols-7"
+          className="grid gap-3 p-3 sm:p-4 lg:grid-cols-2 xl:grid-cols-4"
           noValidate
         >
           {diasSemana.map((dia, index) => {
             const watchedHorario = watchedHorarios[index] ?? defaultHorariosCentro[index]
             const activo = watchedHorario.activo
+            const descansoActivo = activo && Boolean(watchedHorario.descanso_activo)
             const duration = horarioDurationMinutes(watchedHorario)
+            const descansoDuration = horarioDescansoDurationMinutes(watchedHorario)
+            const horarioErrors = horariosForm.formState.errors.horarios?.[index]
 
             return (
               <article
                 key={dia.dia}
-                className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-3"
+                className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3"
               >
                 <input
                   type="hidden"
@@ -666,43 +674,117 @@ export function CentroManager({
                       {dia.label}
                     </p>
                   </div>
-                  <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-orange-200 text-orange-600 focus:ring-orange-500"
+                      className="h-3.5 w-3.5 rounded border-orange-200 text-orange-600 focus:ring-orange-500"
                       {...horariosForm.register(`horarios.${index}.activo`)}
                     />
                     Activo
                   </label>
                 </div>
 
-                <div className="mt-4 space-y-3">
-                  <Field
-                    label="Apertura"
-                    error={horariosForm.formState.errors.horarios?.[index]?.inicio?.message}
-                  >
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">
+                      Apertura
+                    </span>
                     <input
                       type="time"
-                      className="agendix-input"
+                      className="agendix-input mt-1"
                       disabled={!activo}
                       {...horariosForm.register(`horarios.${index}.inicio`)}
                     />
-                  </Field>
-                  <Field
-                    label="Cierre"
-                    error={horariosForm.formState.errors.horarios?.[index]?.fin?.message}
-                  >
+                    {horarioErrors?.inicio?.message && (
+                      <span className="mt-1 block text-[11px] font-medium text-red-500">
+                        {horarioErrors.inicio.message}
+                      </span>
+                    )}
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">
+                      Cierre
+                    </span>
                     <input
                       type="time"
-                      className="agendix-input"
+                      className="agendix-input mt-1"
                       disabled={!activo}
                       {...horariosForm.register(`horarios.${index}.fin`)}
                     />
-                  </Field>
+                    {horarioErrors?.fin?.message && (
+                      <span className="mt-1 block text-[11px] font-medium text-red-500">
+                        {horarioErrors.fin.message}
+                      </span>
+                    )}
+                  </label>
                 </div>
 
-                <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-500 ring-1 ring-slate-200/60">
-                  {activo ? `${Math.round(duration / 60)} h disponibles` : 'Cerrado'}
+                <div
+                  className={`mt-3 rounded-xl border px-2.5 py-2 transition-colors ${
+                    descansoActivo
+                      ? 'border-orange-200 bg-orange-50/45'
+                      : 'border-slate-200/80 bg-white/85'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold text-slate-600">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 shrink-0 rounded border-orange-200 text-orange-600 focus:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!activo}
+                        {...horariosForm.register(`horarios.${index}.descanso_activo`)}
+                      />
+                      <span className="truncate">Descanso</span>
+                    </label>
+                    <span className="shrink-0 text-[11px] font-medium text-slate-400">
+                      Almuerzo
+                    </span>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        Inicio
+                      </span>
+                      <input
+                        type="time"
+                        className="agendix-input mt-1"
+                        disabled={!activo}
+                        {...horariosForm.register(`horarios.${index}.descanso_inicio`)}
+                      />
+                      {horarioErrors?.descanso_inicio?.message && (
+                        <span className="mt-1 block text-[11px] font-medium text-red-500">
+                          {horarioErrors.descanso_inicio.message}
+                        </span>
+                      )}
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        Fin
+                      </span>
+                      <input
+                        type="time"
+                        className="agendix-input mt-1"
+                        disabled={!activo}
+                        {...horariosForm.register(`horarios.${index}.descanso_fin`)}
+                      />
+                      {horarioErrors?.descanso_fin?.message && (
+                        <span className="mt-1 block text-[11px] font-medium text-red-500">
+                          {horarioErrors.descanso_fin.message}
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                <p className="mt-2 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-medium leading-4 text-slate-500 ring-1 ring-slate-200/60">
+                  {activo
+                    ? `${hoursFromMinutesLabel(duration)} disponibles${
+                        descansoDuration > 0
+                          ? `, ${hoursFromMinutesLabel(descansoDuration)} descanso`
+                          : ''
+                      }`
+                    : 'Cerrado'}
                 </p>
               </article>
             )

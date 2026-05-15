@@ -1,4 +1,5 @@
 import type { HorarioCentro } from '@/lib/centro/types'
+import { timeRangeOverlapsDescanso } from '@/lib/centro/horarios'
 import type {
   PublicBookingService,
   PublicBusySlot,
@@ -127,6 +128,16 @@ export function getAvailableSlots({
     minute + servicio.duracionMinutos <= endMinutes;
     minute += bookingSlotStepMinutes
   ) {
+    if (
+      timeRangeOverlapsDescanso(
+        horario,
+        minute,
+        minute + servicio.duracionMinutos
+      )
+    ) {
+      continue
+    }
+
     const hora = minutesToTime(minute)
     const slotStart = localDateTime(fecha, hora)
     const slotEnd = new Date(

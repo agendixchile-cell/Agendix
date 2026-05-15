@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
 import { demoCentro } from '@/lib/centro/demo'
+import { defaultHorariosCentro, normalizeHorarios } from '@/lib/centro/horarios'
+import type { HorarioCentro } from '@/lib/centro/types'
 import { demoEvolucionesSesion } from '@/lib/fichas/demo'
 import type { EvolucionSesionListItem } from '@/lib/fichas/types'
 import {
@@ -82,6 +84,7 @@ function emptyReservasData(loadError: string): ReservasPageData {
     initialSalas: [],
     initialProfesionales: [],
     initialPacientes: [],
+    initialHorarios: defaultHorariosCentro,
     demoMode: false,
     loadError,
   }
@@ -96,6 +99,7 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
       initialProfesionales: demoReservaProfesionales,
       initialPacientes: demoReservaPacientes,
       initialEvoluciones: demoEvolucionesSesion,
+      initialHorarios: defaultHorariosCentro,
       publicBookingPath: `/agendar/${demoCentro.slug}`,
       demoMode: true,
     }
@@ -184,6 +188,7 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
     profesionalesResult,
     pacientesResult,
     evolucionesResult,
+    horariosResult,
   ] = await Promise.all([
     reservasQuery,
     supabase
@@ -205,6 +210,11 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
       .eq('centro_id', centroId)
       .order('created_at', { ascending: false }),
     evolucionesQuery,
+    supabase
+      .from('horarios_centro')
+      .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
+      .eq('centro_id', centroId)
+      .order('dia', { ascending: true }),
   ])
 
   const reservas = ((reservasResult.data ?? []) as unknown as ReservaQueryRow[]).map(
@@ -224,7 +234,8 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
     salasResult.error ||
     profesionalesResult.error ||
     pacientesResult.error ||
-    evolucionesResult.error
+    evolucionesResult.error ||
+    horariosResult.error
 
   const profesionales = (
     (profesionalesResult.data ?? []) as unknown as ProfesionalOptionQueryRow[]
@@ -242,6 +253,10 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
     initialPacientes: visiblePacientes,
     initialEvoluciones:
       (evolucionesResult.data ?? []) as EvolucionSesionListItem[],
+    initialHorarios:
+      horariosResult.data && horariosResult.data.length > 0
+        ? normalizeHorarios(horariosResult.data as HorarioCentro[])
+        : defaultHorariosCentro,
     publicBookingPath,
     demoMode: false,
     loadError: loadError

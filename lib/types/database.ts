@@ -793,6 +793,9 @@ export interface Database {
           activo: boolean
           inicio: string
           fin: string
+          descanso_activo: boolean
+          descanso_inicio: string
+          descanso_fin: string
           created_at: string
           updated_at: string
         }
@@ -803,6 +806,9 @@ export interface Database {
           activo?: boolean
           inicio?: string
           fin?: string
+          descanso_activo?: boolean
+          descanso_inicio?: string
+          descanso_fin?: string
           created_at?: string
           updated_at?: string
         }
@@ -813,6 +819,9 @@ export interface Database {
           activo?: boolean
           inicio?: string
           fin?: string
+          descanso_activo?: boolean
+          descanso_inicio?: string
+          descanso_fin?: string
           created_at?: string
           updated_at?: string
         }

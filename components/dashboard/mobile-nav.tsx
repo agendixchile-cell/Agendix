@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Menu, X } from 'lucide-react'
-import { AgendixBrand } from '@/components/brand/agendix-brand'
+import { AgendixWordmark } from '@/components/brand/agendix-brand'
 import { Sidebar } from './sidebar'
 
 type MobileNavProps = {
@@ -40,14 +40,11 @@ export function MobileNav({
               onClick={() => setOpen(false)}
             />
             <div
-              className="fixed bottom-0 left-0 top-0 z-[9999] flex w-80 max-w-[86vw] flex-col overflow-hidden border-r border-slate-200 bg-white shadow-2xl shadow-slate-950/12 md:hidden"
+              className="fixed bottom-0 left-0 top-0 z-[9999] flex w-80 max-w-[86vw] flex-col overflow-hidden border-r border-slate-200 bg-[#FCFBF9] shadow-2xl shadow-slate-950/12 md:hidden"
             >
               <div className="px-4 pb-3 pt-4">
                 <div className="flex items-center justify-between rounded-xl p-2">
-                  <AgendixBrand
-                    subtitle="Agenda y operación clínica"
-                    compact
-                  />
+                  <AgendixWordmark className="h-14 w-56 sm:h-14 sm:w-56" />
                   <button
                     onClick={() => setOpen(false)}
                     className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-orange-50 hover:text-orange-600"

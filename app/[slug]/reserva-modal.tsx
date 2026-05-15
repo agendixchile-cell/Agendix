@@ -6,6 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Calendar, ChevronLeft, ChevronRight, Clock, User, X, CheckCircle2 } from 'lucide-react'
 import { Field } from '@/components/ui/field'
+import { timeRangeOverlapsDescanso } from '@/lib/centro/horarios'
+import type { HorarioCentro } from '@/lib/centro/types'
 import type { ServicioListItem } from '@/lib/servicios/types'
 
 type Profesional = {
@@ -19,7 +21,7 @@ type ReservaPublicaProps = {
   centroNombre: string
   servicios: ServicioListItem[]
   profesionales: Profesional[]
-  horarios: Array<{ dia: number; activo: boolean; inicio: string; fin: string }>
+  horarios: HorarioCentro[]
   demoMode: boolean
 }
 
@@ -30,13 +32,18 @@ const contactoSchema = z.object({
 })
 type ContactoValues = z.infer<typeof contactoSchema>
 
-function generarSlots(inicio: string, fin: string, duracion: number): string[] {
-  const [hi, mi] = inicio.split(':').map(Number)
-  const [hf, mf] = fin.split(':').map(Number)
+function generarSlots(
+  horario: ReservaPublicaProps['horarios'][number],
+  duracion: number
+): string[] {
+  const [hi, mi] = horario.inicio.split(':').map(Number)
+  const [hf, mf] = horario.fin.split(':').map(Number)
   const startMin = hi * 60 + mi
   const endMin = hf * 60 + mf
   const slots: string[] = []
   for (let t = startMin; t + duracion <= endMin; t += duracion) {
+    if (timeRangeOverlapsDescanso(horario, t, t + duracion)) continue
+
     const h = String(Math.floor(t / 60)).padStart(2, '0')
     const m = String(t % 60).padStart(2, '0')
     slots.push(`${h}:${m}`)
@@ -177,7 +184,7 @@ export function ReservaModal({
     : null
 
   const slots = servicio && horarioDia?.activo
-    ? generarSlots(horarioDia.inicio, horarioDia.fin, servicio.duracion_minutos)
+    ? generarSlots(horarioDia, servicio.duracion_minutos)
     : []
 
   function reset() {

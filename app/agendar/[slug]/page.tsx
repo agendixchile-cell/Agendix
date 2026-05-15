@@ -177,7 +177,7 @@ async function getPublicBookingData(
       .in('rol', ['admin', 'profesional']),
     supabase
       .from('horarios_centro')
-      .select('dia,activo,inicio,fin')
+      .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
       .eq('centro_id', centro.id)
       .order('dia'),
     supabase
