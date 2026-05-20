@@ -5,12 +5,16 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   loginSchema,
+  passwordResetRequestSchema,
   registerSchema,
+  updatePasswordSchema,
   type RegisterValues,
 } from '@/lib/auth/validation'
+import { getPasswordResetCallbackUrl } from '@/lib/urls'
 
 export type AuthState = {
   error?: string
+  success?: string
 } | undefined
 
 function generarSlug(nombre: string): string {
@@ -91,6 +95,84 @@ export async function loginAction(
       error: errorSupabaseEnEspanol(
         error.message,
         'No pudimos iniciar sesión. Intenta nuevamente.',
+        error.code
+      ),
+    }
+  }
+
+  redirect('/agenda')
+}
+
+export async function requestPasswordResetAction(
+  _prevState: AuthState,
+  formData: FormData
+): Promise<AuthState> {
+  const parsed = passwordResetRequestSchema.safeParse({
+    email: formData.get('email'),
+  })
+
+  if (!parsed.success) {
+    return { error: 'Ingresa un email válido para recuperar tu contraseña.' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    parsed.data.email.trim().toLowerCase(),
+    {
+      redirectTo: getPasswordResetCallbackUrl(),
+    }
+  )
+
+  if (error) {
+    return {
+      error: errorSupabaseEnEspanol(
+        error.message,
+        'No pudimos enviar el correo de recuperación. Intenta nuevamente.',
+        error.code
+      ),
+    }
+  }
+
+  return {
+    success:
+      'Te enviamos un enlace para crear una nueva contraseña. Revisa también spam o promociones.',
+  }
+}
+
+export async function updatePasswordAction(
+  _prevState: AuthState,
+  formData: FormData
+): Promise<AuthState> {
+  const parsed = updatePasswordSchema.safeParse({
+    password: formData.get('password'),
+    confirmarPassword: formData.get('confirmarPassword'),
+  })
+
+  if (!parsed.success) {
+    return { error: 'Revisa la nueva contraseña y su confirmación.' }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return {
+      error:
+        'El enlace de recuperación expiró o no abrió sesión. Solicita un nuevo correo.',
+    }
+  }
+
+  const { error } = await supabase.auth.updateUser({
+    password: parsed.data.password,
+  })
+
+  if (error) {
+    return {
+      error: errorSupabaseEnEspanol(
+        error.message,
+        'No pudimos actualizar la contraseña. Solicita un nuevo enlace e intenta otra vez.',
         error.code
       ),
     }

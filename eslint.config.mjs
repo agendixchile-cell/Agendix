@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "supabase/functions/**",
+    ".claude/**",
+    "Agendix page/**",
     "next-env.d.ts",
   ]),
 ]);

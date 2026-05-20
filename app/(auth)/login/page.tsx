@@ -98,6 +98,15 @@ export default function LoginPage() {
             />
           </Field>
 
+          <div className="-mt-2 flex justify-end">
+            <Link
+              href="/recuperar-contrasena"
+              className="text-sm font-semibold text-orange-500 transition hover:text-orange-600 hover:underline"
+            >
+              Olvidé mi contraseña
+            </Link>
+          </div>
+
           {authFeedback && (
             <FeedbackBanner
               feedback={authFeedback}

@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+.claude/
+Agendix page/
 
 # debug
 npm-debug.log*
