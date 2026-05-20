@@ -4,6 +4,7 @@ import { AgendixWordmark } from '@/components/brand/agendix-brand'
 import { DesktopSidebar } from '@/components/dashboard/desktop-sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
+import { getDemoPlanId } from '@/lib/subscription/server'
 
 export default async function DashboardLayout({
   children,
@@ -16,6 +17,8 @@ export default async function DashboardLayout({
   } = await supabase.auth.getUser()
 
   if (!user && !isDemoMode()) redirect('/login')
+  const demoMode = isDemoMode()
+  const demoPlanId = demoMode ? await getDemoPlanId() : undefined
 
   const { data: profile } = user
     ? await supabase
@@ -27,7 +30,7 @@ export default async function DashboardLayout({
 
   const nombreUsuario = profile?.nombre ?? user?.email ?? demoUser.nombre
   const inicialUsuario = nombreUsuario.charAt(0).toUpperCase()
-  const sessionLabel = isDemoMode() ? 'Demo activo' : 'Sesión activa'
+  const sessionLabel = demoMode ? 'Demo activo' : 'Sesión activa'
 
   return (
     <div className="flex min-h-screen bg-[#FAFAF8]">
@@ -35,6 +38,8 @@ export default async function DashboardLayout({
         userName={nombreUsuario}
         userInitial={inicialUsuario}
         sessionLabel={sessionLabel}
+        demoMode={demoMode}
+        demoPlanId={demoPlanId}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -43,6 +48,8 @@ export default async function DashboardLayout({
             userName={nombreUsuario}
             userInitial={inicialUsuario}
             sessionLabel={sessionLabel}
+            demoMode={demoMode}
+            demoPlanId={demoPlanId}
           />
           <div className="absolute left-1/2 -translate-x-1/2">
             <AgendixWordmark preload className="h-10 w-44 sm:h-11 sm:w-48" />

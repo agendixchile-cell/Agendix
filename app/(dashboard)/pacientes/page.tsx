@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { PacientesManager } from '@/components/pacientes/pacientes-manager'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
-import { demoPacientes } from '@/lib/pacientes/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import type { PacienteListItem } from '@/lib/pacientes/types'
 import { getDemoSubscriptionContext, getPlanSnapshotForCentro, getOrganizationUsage } from '@/lib/subscription/server'
 import { createClient } from '@/lib/supabase/server'
@@ -11,10 +11,11 @@ export default async function PacientesPage() {
 
   if (demoMode) {
     const subscription = await getDemoSubscriptionContext()
+    const dataset = getDemoPlanDataset(subscription.planId)
 
     return (
       <PacientesManager
-        initialPacientes={demoPacientes}
+        initialPacientes={dataset.pacientes}
         demoMode
         planContext={subscription}
       />

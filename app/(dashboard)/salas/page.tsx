@@ -1,15 +1,25 @@
 import { redirect } from 'next/navigation'
 import { SalasManager } from '@/components/salas/salas-manager'
-import { demoSalas } from '@/lib/salas/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import type { SalaListItem } from '@/lib/salas/types'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
+import { getDemoSubscriptionContext } from '@/lib/subscription/server'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function SalasPage() {
   const demoMode = isDemoMode()
 
   if (demoMode) {
-    return <SalasManager initialSalas={demoSalas} demoMode />
+    const subscription = await getDemoSubscriptionContext()
+    const dataset = getDemoPlanDataset(subscription.planId)
+
+    return (
+      <SalasManager
+        initialSalas={dataset.salas}
+        demoMode
+        demoPlanId={subscription.planId}
+      />
+    )
   }
 
   const supabase = await createClient()

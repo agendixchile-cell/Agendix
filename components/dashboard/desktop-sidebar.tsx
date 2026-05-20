@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { AgendixSymbol, AgendixWordmark } from '@/components/brand/agendix-brand'
+import type { PlanId } from '@/lib/plans'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './sidebar'
 
@@ -12,12 +13,16 @@ type DesktopSidebarProps = {
   userName: string
   userInitial: string
   sessionLabel: string
+  demoMode?: boolean
+  demoPlanId?: PlanId
 }
 
 export function DesktopSidebar({
   userName,
   userInitial,
   sessionLabel,
+  demoMode,
+  demoPlanId,
 }: DesktopSidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -83,6 +88,8 @@ export function DesktopSidebar({
           userName={userName}
           userInitial={userInitial}
           sessionLabel={sessionLabel}
+          demoMode={demoMode}
+          demoPlanId={demoPlanId}
         />
       </div>
     </aside>

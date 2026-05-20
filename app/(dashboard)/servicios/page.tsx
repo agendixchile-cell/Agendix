@@ -1,15 +1,25 @@
 import { redirect } from 'next/navigation'
 import { ServiciosManager } from '@/components/servicios/servicios-manager'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
-import { demoServicios } from '@/lib/servicios/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import type { ServicioListItem } from '@/lib/servicios/types'
+import { getDemoSubscriptionContext } from '@/lib/subscription/server'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function ServiciosPage() {
   const demoMode = isDemoMode()
 
   if (demoMode) {
-    return <ServiciosManager initialServicios={demoServicios} demoMode />
+    const subscription = await getDemoSubscriptionContext()
+    const dataset = getDemoPlanDataset(subscription.planId)
+
+    return (
+      <ServiciosManager
+        initialServicios={dataset.servicios}
+        demoMode
+        demoPlanId={subscription.planId}
+      />
+    )
   }
 
   const supabase = await createClient()

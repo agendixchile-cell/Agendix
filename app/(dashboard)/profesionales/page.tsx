@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { ProfesionalesManager } from '@/components/profesionales/profesionales-manager'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
-import { demoProfesionales } from '@/lib/profesionales/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import {
   getDemoSubscriptionContext,
   getOrganizationUsage,
@@ -31,6 +31,7 @@ function toProfesionalListItem(
     email: row.profiles?.email ?? '',
     telefono: row.profiles?.telefono ?? null,
     especialidad: row.especialidad ?? null,
+    avatar_url: row.avatar_url ?? row.profiles?.avatar_url ?? null,
     descanso_entre_reservas_minutos:
       row.descanso_entre_reservas_minutos ?? 0,
     duracion_sesion_minutos: row.duracion_sesion_minutos ?? 60,
@@ -49,10 +50,12 @@ export default async function ProfesionalesPage() {
 
   if (demoMode) {
     const subscription = await getDemoSubscriptionContext()
+    const dataset = getDemoPlanDataset(subscription.planId)
 
     return (
       <ProfesionalesManager
-        initialProfesionales={demoProfesionales}
+        initialProfesionales={dataset.profesionales}
+        centroId={dataset.centro.id}
         demoMode
         planContext={subscription}
       />
@@ -78,6 +81,7 @@ export default async function ProfesionalesPage() {
     return (
       <ProfesionalesManager
         initialProfesionales={[]}
+        centroId=""
         demoMode={false}
         loadError="No pudimos cargar el centro asociado a tu usuario."
       />
@@ -88,6 +92,7 @@ export default async function ProfesionalesPage() {
     return (
       <ProfesionalesManager
         initialProfesionales={[]}
+        centroId=""
         demoMode={false}
         loadError={`No encontramos un centro asociado a ${user.email ?? demoUser.nombre}.`}
       />
@@ -97,7 +102,7 @@ export default async function ProfesionalesPage() {
   const { data: profesionales, error: profesionalesError } = await supabase
     .from('miembros_centro')
     .select(
-      'id,profile_id,rol,especialidad,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono)'
+      'id,profile_id,rol,especialidad,avatar_url,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono,avatar_url)'
     )
     .eq('centro_id', membership.centro_id)
     .in('rol', ['owner', 'admin', 'profesional'])
@@ -128,6 +133,7 @@ export default async function ProfesionalesPage() {
             reminderConfigByProfileId.get(profesional.profile_id)
           )
       )}
+      centroId={membership.centro_id}
       demoMode={false}
       planContext={{ ...snapshot, usage }}
       loadError={

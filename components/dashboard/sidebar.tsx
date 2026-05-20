@@ -3,24 +3,55 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  BarChart3,
   Building2,
   CalendarDays,
   ClipboardList,
   CreditCard,
+  LayoutDashboard,
+  LockKeyhole,
   Settings,
   UsersRound,
 } from 'lucide-react'
+import { DemoPlanSwitcher } from '@/components/plans/demo-plan-switcher'
+import { hasFeature, type FeatureKey, type PlanId } from '@/lib/plans'
 import { cn } from '@/lib/utils'
 import { LogoutButton } from './logout-button'
 
-const navGroups = [
+type NavItem = {
+  href: string
+  label: string
+  icon: typeof CalendarDays
+  match?: string[]
+  feature?: FeatureKey
+  lockedLabel?: string
+}
+
+const navGroups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Trabajo diario',
     items: [
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/agenda', label: 'Agenda', icon: CalendarDays },
       { href: '/pacientes', label: 'Pacientes', icon: UsersRound },
-      { href: '/reservas', label: 'Reservas', icon: ClipboardList, match: ['/reservas'] },
-      { href: '/admin', label: 'Administración', icon: Building2 },
+      {
+        href: '/reservas',
+        label: 'Reservas',
+        icon: ClipboardList,
+        match: ['/reservas'],
+      },
+      {
+        href: '/admin',
+        label: 'Administración',
+        icon: Building2,
+        feature: 'admin_panel',
+        lockedLabel: 'Center',
+      },
+      {
+        href: '/estadisticas',
+        label: 'Estadísticas',
+        icon: BarChart3,
+      },
       { href: '/configuracion', label: 'Configuración', icon: Settings },
       { href: '/configuracion/plan', label: 'Mi plan', icon: CreditCard },
     ],
@@ -37,6 +68,8 @@ type SidebarProps = {
   userName?: string
   userInitial?: string
   sessionLabel?: string
+  demoMode?: boolean
+  demoPlanId?: PlanId
 }
 
 export function Sidebar({
@@ -45,8 +78,11 @@ export function Sidebar({
   userName = 'Usuario',
   userInitial = 'U',
   sessionLabel = 'Sesión activa',
+  demoMode = false,
+  demoPlanId,
 }: SidebarProps) {
   const pathname = usePathname()
+  const planIdForNav = demoPlanId ?? 'individual'
   const activeHref =
     navGroups
       .flatMap((group) => group.items)
@@ -72,17 +108,27 @@ export function Sidebar({
               {group.label}
             </p>
             <div className="space-y-0.5">
-              {group.items.map(({ href, label, icon: Icon }) => {
+              {group.items.map(({ href, label, icon: Icon, feature, lockedLabel }) => {
                 const active = href === activeHref
+                const locked =
+                  demoMode && feature ? !hasFeature(planIdForNav, feature) : false
+                const itemHref = locked ? '/configuracion/plan' : href
+                const resolvedLockedLabel = lockedLabel ?? 'plan superior'
 
                 return (
                   <Link
                     key={href}
-                    href={href}
+                    href={itemHref}
                     onClick={onNavigate}
                     aria-current={active ? 'page' : undefined}
                     aria-label={collapsed ? label : undefined}
-                    title={collapsed ? label : undefined}
+                    title={
+                      collapsed
+                        ? locked
+                          ? `${label} requiere ${resolvedLockedLabel}`
+                          : label
+                        : undefined
+                    }
                     className={cn(
                       'group relative flex items-center rounded-xl border text-sm font-medium transition-all duration-150',
                       collapsed
@@ -90,7 +136,9 @@ export function Sidebar({
                         : 'w-full gap-2.5 px-2.5 py-2.5',
                       active
                         ? 'border-[#22211F] bg-[#22211F] text-white shadow-md shadow-slate-950/[0.12]'
-                        : 'border-transparent text-slate-500 hover:bg-orange-50/70 hover:text-slate-900'
+                        : locked
+                          ? 'border-transparent text-slate-400 hover:bg-orange-50/70 hover:text-slate-900'
+                          : 'border-transparent text-slate-500 hover:bg-orange-50/70 hover:text-slate-900'
                     )}
                   >
                     {/* active accent indicator */}
@@ -112,6 +160,12 @@ export function Sidebar({
                       <Icon size={15} aria-hidden="true" />
                     </span>
                     {!collapsed && <span>{label}</span>}
+                    {!collapsed && locked && (
+                      <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 group-hover:bg-white">
+                        <LockKeyhole size={11} aria-hidden="true" />
+                        {resolvedLockedLabel}
+                      </span>
+                    )}
                   </Link>
                 )
               })}
@@ -120,7 +174,20 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className={cn('border-t border-slate-100 pt-3', collapsed ? 'px-3 pb-4' : 'px-3 pb-4')}>
+      <div
+        className={cn(
+          'border-t border-slate-100 pt-3',
+          collapsed ? 'px-3 pb-4' : 'px-3 pb-4'
+        )}
+      >
+        {demoMode && demoPlanId && (
+          <DemoPlanSwitcher
+            currentPlanId={demoPlanId}
+            collapsed={collapsed}
+            surface="sidebar"
+            className={collapsed ? 'mb-3' : 'mb-3'}
+          />
+        )}
         <div
           className={cn(
             'border border-slate-200/80 bg-[#FAFAF8] shadow-sm shadow-slate-900/[0.03]',

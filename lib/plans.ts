@@ -190,7 +190,7 @@ export const subscriptionPlans: Record<PlanId, PlanDefinition> = {
     extras: {
       professionals: {
         priceMonthlyClp: 2990,
-        enabled: false,
+        enabled: true,
         label: 'Profesional extra',
       },
     },
@@ -226,7 +226,7 @@ export const subscriptionPlans: Record<PlanId, PlanDefinition> = {
     extras: {
       professionals: {
         priceMonthlyClp: 2990,
-        enabled: false,
+        enabled: true,
         label: 'Profesional extra',
       },
     },

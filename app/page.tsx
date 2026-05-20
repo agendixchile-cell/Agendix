@@ -66,6 +66,17 @@ const toneClasses: Record<Tone, string> = {
   slate: 'bg-slate-50 text-slate-600 ring-slate-200/70',
 }
 
+const graphiteSurface = 'bg-[#242627]'
+const graphiteInk = 'text-[#242627]'
+const interactiveCardClasses =
+  'group transition-all duration-200 ease-out hover:-translate-y-1 hover:border-orange-300 hover:bg-orange-500 hover:text-white hover:shadow-xl hover:shadow-orange-900/[0.13] motion-reduce:transition-none motion-reduce:hover:translate-y-0'
+const interactiveTitleClasses = 'transition-colors duration-200 group-hover:text-white'
+const interactiveTextClasses = 'transition-colors duration-200 group-hover:text-white/80'
+const interactiveBadgeClasses =
+  'transition-colors duration-200 group-hover:border-white/25 group-hover:bg-white/15 group-hover:text-white'
+const interactiveIconClasses =
+  'transition-all duration-200 group-hover:bg-white/15 group-hover:text-white group-hover:ring-white/25'
+
 const comparisonRows: Array<{
   label: string
   getValue?: (plan: PlanDefinition) => string
@@ -160,15 +171,18 @@ function SectionHeading({
 function IconBadge({
   icon: Icon,
   tone = 'orange',
+  className,
 }: {
   icon: LucideIcon
   tone?: Tone
+  className?: string
 }) {
   return (
     <span
       className={cn(
         'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1',
-        toneClasses[tone]
+        toneClasses[tone],
+        className
       )}
     >
       <Icon size={19} aria-hidden="true" />
@@ -178,8 +192,12 @@ function IconBadge({
 
 function CheckItem({ children }: { children: ReactNode }) {
   return (
-    <li className="flex items-start gap-3 text-sm leading-6 text-slate-600">
-      <Check size={16} className="mt-1 shrink-0 text-orange-500" aria-hidden="true" />
+    <li className="flex items-start gap-3 text-sm leading-6 text-slate-600 transition-colors duration-200 group-hover:text-white/80">
+      <Check
+        size={16}
+        className="mt-1 shrink-0 text-orange-500 transition-colors duration-200 group-hover:text-white"
+        aria-hidden="true"
+      />
       <span>{children}</span>
     </li>
   )
@@ -325,7 +343,7 @@ function HeroWorkspace() {
       </div>
 
       <div className="grid lg:grid-cols-[210px_1fr_280px]">
-        <aside className="hidden border-r border-slate-100 bg-[#111111] p-4 text-white lg:block">
+        <aside className={cn('hidden border-r border-slate-100 p-4 text-white lg:block', graphiteSurface)}>
           <div className="mb-6 flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-xs font-bold">
               A
@@ -348,7 +366,7 @@ function HeroWorkspace() {
                 className={cn(
                   'mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium',
                   label === 'Agenda'
-                    ? 'bg-white text-[#171615]'
+                    ? cn('bg-white', graphiteInk)
                     : 'text-white/60'
                 )}
               >
@@ -428,19 +446,31 @@ function HeroWorkspace() {
               ['4', 'Profesionales', 'text-sky-600'],
               ['92%', 'Asistencia', 'text-emerald-600'],
             ].map(([value, label, color]) => (
-              <div key={label} className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200/70">
-                <p className={cn('text-xl font-bold', color)}>{value}</p>
-                <p className="mt-1 text-[11px] font-medium text-slate-500">{label}</p>
+              <div
+                key={label}
+                className="group rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200/70 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-orange-500 hover:shadow-lg hover:shadow-orange-900/[0.12] hover:ring-orange-300 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+              >
+                <p className={cn('text-xl font-bold transition-colors duration-200 group-hover:text-white', color)}>
+                  {value}
+                </p>
+                <p className="mt-1 text-[11px] font-medium text-slate-500 transition-colors duration-200 group-hover:text-white/70">
+                  {label}
+                </p>
               </div>
             ))}
           </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+          <div className={cn('group mt-4 rounded-lg border border-slate-200 bg-white p-4', interactiveCardClasses)}>
             <div className="mb-3 flex items-center gap-2">
-              <MonitorPlay size={16} className="text-orange-500" />
-              <p className="text-sm font-semibold text-[#171615]">Atención online</p>
+              <MonitorPlay
+                size={16}
+                className="text-orange-500 transition-colors duration-200 group-hover:text-white"
+              />
+              <p className={cn('text-sm font-semibold text-[#171615]', interactiveTitleClasses)}>
+                Atención online
+              </p>
             </div>
-            <p className="text-xs leading-5 text-slate-500">
+            <p className={cn('text-xs leading-5 text-slate-500', interactiveTextClasses)}>
               Enlaces Meet o Zoom listos para telemedicina y reuniones de equipo
               en planes avanzados.
             </p>
@@ -534,13 +564,23 @@ function Problem() {
           {pains.map((pain) => (
             <article
               key={pain.title}
-              className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm shadow-black/[0.035]"
+              className={cn(
+                'rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm shadow-black/[0.035]',
+                interactiveCardClasses
+              )}
             >
-              <IconBadge icon={pain.icon} tone={pain.tone} />
-              <h3 className="mt-5 text-lg font-bold leading-6 text-[#171615]">
+              <IconBadge icon={pain.icon} tone={pain.tone} className={interactiveIconClasses} />
+              <h3
+                className={cn(
+                  'mt-5 text-lg font-bold leading-6 text-[#171615]',
+                  interactiveTitleClasses
+                )}
+              >
                 {pain.title}
               </h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{pain.desc}</p>
+              <p className={cn('mt-3 text-sm leading-6 text-slate-600', interactiveTextClasses)}>
+                {pain.desc}
+              </p>
             </article>
           ))}
         </div>
@@ -599,7 +639,7 @@ function Solution() {
               title="Una plataforma simple para ordenar la operación clínica completa."
               description="Agendix reúne lo que normalmente vive separado: agenda, pacientes, reservas, equipo, salas, permisos, estadísticas y atención online."
             />
-            <div className="mt-8 rounded-lg bg-[#111111] p-6 text-white shadow-xl shadow-black/[0.12]">
+            <div className={cn('mt-8 rounded-lg p-6 text-white shadow-xl shadow-black/[0.12]', graphiteSurface)}>
               <p className="text-sm font-semibold text-orange-200">
                 Resultado esperado
               </p>
@@ -614,13 +654,23 @@ function Solution() {
             {capabilities.map((item) => (
               <article
                 key={item.title}
-                className="rounded-lg border border-slate-200/80 bg-[#FAFAF8] p-5"
+                className={cn(
+                  'rounded-lg border border-slate-200/80 bg-[#FAFAF8] p-5 shadow-sm shadow-black/[0.025]',
+                  interactiveCardClasses
+                )}
               >
-                <IconBadge icon={item.icon} tone={item.tone} />
-                <h3 className="mt-4 text-base font-bold text-[#171615]">
+                <IconBadge icon={item.icon} tone={item.tone} className={interactiveIconClasses} />
+                <h3
+                  className={cn(
+                    'mt-4 text-base font-bold text-[#171615]',
+                    interactiveTitleClasses
+                  )}
+                >
                   {item.title}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{item.desc}</p>
+                <p className={cn('mt-2 text-sm leading-6 text-slate-600', interactiveTextClasses)}>
+                  {item.desc}
+                </p>
               </article>
             ))}
           </div>
@@ -668,16 +718,27 @@ function HowItWorks() {
           {steps.map((step, index) => (
             <article
               key={step.title}
-              className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm shadow-black/[0.035]"
+              className={cn(
+                'rounded-lg border border-slate-200 bg-white p-6 shadow-sm shadow-black/[0.035]',
+                interactiveCardClasses
+              )}
             >
               <div className="flex items-center justify-between">
-                <IconBadge icon={step.icon} tone={index === 3 ? 'emerald' : 'orange'} />
-                <span className="text-xs font-bold text-slate-300">
+                <IconBadge
+                  icon={step.icon}
+                  tone={index === 3 ? 'emerald' : 'orange'}
+                  className={interactiveIconClasses}
+                />
+                <span className="text-xs font-bold text-slate-300 transition-colors duration-200 group-hover:text-white/45">
                   0{index + 1}
                 </span>
               </div>
-              <h3 className="mt-5 text-base font-bold text-[#171615]">{step.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{step.desc}</p>
+              <h3 className={cn('mt-5 text-base font-bold text-[#171615]', interactiveTitleClasses)}>
+                {step.title}
+              </h3>
+              <p className={cn('mt-2 text-sm leading-6 text-slate-600', interactiveTextClasses)}>
+                {step.desc}
+              </p>
             </article>
           ))}
         </div>
@@ -727,13 +788,23 @@ function CustomerTypes() {
           {types.map((type) => (
             <article
               key={type.label}
-              className="rounded-lg border border-slate-200 bg-[#FAFAF8] p-6"
+              className={cn(
+                'rounded-lg border border-slate-200 bg-[#FAFAF8] p-6 shadow-sm shadow-black/[0.025]',
+                interactiveCardClasses
+              )}
             >
-              <Badge tone={type.tone === 'emerald' ? 'green' : type.tone === 'sky' ? 'blue' : type.tone}>
+              <Badge
+                tone={type.tone === 'emerald' ? 'green' : type.tone === 'sky' ? 'blue' : type.tone}
+                className={interactiveBadgeClasses}
+              >
                 {type.label}
               </Badge>
-              <h3 className="mt-5 text-lg font-bold text-[#171615]">{type.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{type.desc}</p>
+              <h3 className={cn('mt-5 text-lg font-bold text-[#171615]', interactiveTitleClasses)}>
+                {type.title}
+              </h3>
+              <p className={cn('mt-3 text-sm leading-6 text-slate-600', interactiveTextClasses)}>
+                {type.desc}
+              </p>
             </article>
           ))}
         </div>
@@ -770,11 +841,18 @@ function Features() {
           {features.map(([Icon, title, desc, tone]) => (
             <article
               key={title}
-              className="rounded-lg border border-slate-200/80 bg-white p-5 shadow-sm shadow-black/[0.025]"
+              className={cn(
+                'rounded-lg border border-slate-200/80 bg-white p-5 shadow-sm shadow-black/[0.025]',
+                interactiveCardClasses
+              )}
             >
-              <IconBadge icon={Icon} tone={tone as Tone} />
-              <h3 className="mt-4 text-sm font-bold text-[#171615]">{title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{desc}</p>
+              <IconBadge icon={Icon} tone={tone as Tone} className={interactiveIconClasses} />
+              <h3 className={cn('mt-4 text-sm font-bold text-[#171615]', interactiveTitleClasses)}>
+                {title}
+              </h3>
+              <p className={cn('mt-2 text-sm leading-6 text-slate-600', interactiveTextClasses)}>
+                {desc}
+              </p>
             </article>
           ))}
         </div>
@@ -795,33 +873,40 @@ function PricingCard({ plan }: { plan: PlanDefinition }) {
   return (
     <article
       className={cn(
-        'relative flex min-h-full flex-col rounded-lg border bg-white p-6 shadow-sm',
+        'group relative flex min-h-full flex-col rounded-lg border bg-white p-6 shadow-sm transition-all duration-200 ease-out hover:-translate-y-1.5 hover:bg-orange-500 hover:text-white hover:shadow-2xl hover:shadow-orange-900/[0.14] motion-reduce:transition-none motion-reduce:hover:translate-y-0',
         isRecommended
-          ? 'border-orange-300 shadow-xl shadow-orange-900/[0.08] ring-1 ring-orange-200'
-          : 'border-slate-200/80 shadow-black/[0.03]'
+          ? 'border-orange-300 shadow-xl shadow-orange-900/[0.08] ring-1 ring-orange-200 hover:border-orange-400'
+          : 'border-slate-200/80 shadow-black/[0.03] hover:border-orange-300'
       )}
     >
       <div className="mb-5 flex min-h-7 items-start justify-between gap-3">
-        <Badge tone={isRecommended ? 'orange' : isPopular ? 'blue' : 'slate'}>
+        <Badge
+          tone={isRecommended ? 'orange' : isPopular ? 'blue' : 'slate'}
+          className={interactiveBadgeClasses}
+        >
           {isRecommended ? 'Recomendado' : isPopular ? 'Más elegido' : plan.audienceTag}
         </Badge>
       </div>
 
       <div>
-        <h3 className="text-xl font-bold text-[#171615]">{plan.commercialName}</h3>
-        <p className="mt-2 min-h-12 text-sm leading-6 text-slate-600">
+        <h3 className={cn('text-xl font-bold text-[#171615]', interactiveTitleClasses)}>
+          {plan.commercialName}
+        </h3>
+        <p className={cn('mt-2 min-h-12 text-sm leading-6 text-slate-600', interactiveTextClasses)}>
           {plan.audience}
         </p>
       </div>
 
-      <div className="mt-6 border-y border-slate-100 py-5">
+      <div className="mt-6 border-y border-slate-100 py-5 transition-colors duration-200 group-hover:border-white/15">
         <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
-          <span className="text-4xl font-bold tracking-tight text-[#171615]">
+          <span className={cn('text-4xl font-bold tracking-tight text-[#171615]', interactiveTitleClasses)}>
             {formatPlanPrice(plan.monthlyPriceClp)}
           </span>
-          <span className="pb-1 text-sm font-medium text-slate-500">CLP / mes</span>
+          <span className="pb-1 text-sm font-medium text-slate-500 transition-colors duration-200 group-hover:text-white/70">
+            CLP / mes
+          </span>
         </div>
-        <p className="mt-2 text-xs font-medium text-slate-400">
+        <p className="mt-2 text-xs font-medium text-slate-400 transition-colors duration-200 group-hover:text-white/60">
           {plan.professionalRangeLabel}
         </p>
       </div>
@@ -833,14 +918,14 @@ function PricingCard({ plan }: { plan: PlanDefinition }) {
       </ul>
 
       {extraProfessional && (
-        <div className="mt-6 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200/70">
+        <div className="mt-6 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200/70 transition-colors duration-200 group-hover:bg-white/10 group-hover:text-white/80 group-hover:ring-white/20">
           Profesional extra: {formatPlanPrice(extraProfessional)} / mes
         </div>
       )}
 
       <Button
         asChild
-        className="mt-6 w-full"
+        className="mt-6 w-full group-hover:!border-white group-hover:!bg-white group-hover:!text-orange-700"
         variant={isRecommended ? 'primary' : 'secondary'}
       >
         <Link href={ctaHref}>
@@ -908,7 +993,7 @@ function PlanComparison() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {comparisonRows.map((row) => (
-                  <tr key={row.label}>
+                  <tr key={row.label} className="transition-colors duration-150 hover:bg-orange-50/70">
                     <td className="px-4 py-4 font-medium text-slate-700">
                       {row.label}
                     </td>
@@ -967,7 +1052,7 @@ function Differentiators() {
   ]
 
   return (
-    <section className="bg-[#111111] py-16 text-white sm:py-20">
+    <section className={cn('py-16 text-white sm:py-20', graphiteSurface)}>
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="Por qué Agendix"
@@ -980,11 +1065,17 @@ function Differentiators() {
           {reasons.map((reason) => (
             <article
               key={reason.title}
-              className="rounded-lg border border-white/10 bg-white/[0.04] p-5"
+              className="group rounded-lg border border-white/10 bg-white/[0.04] p-5 transition-all duration-200 ease-out hover:-translate-y-1 hover:border-orange-300/70 hover:bg-orange-500 hover:shadow-xl hover:shadow-orange-900/[0.18] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
             >
-              <reason.icon size={20} className="text-orange-300" aria-hidden="true" />
+              <reason.icon
+                size={20}
+                className="text-orange-300 transition-colors duration-200 group-hover:text-white"
+                aria-hidden="true"
+              />
               <h3 className="mt-4 text-sm font-bold text-white">{reason.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-white/58">{reason.desc}</p>
+              <p className="mt-2 text-sm leading-6 text-white/58 transition-colors duration-200 group-hover:text-white/80">
+                {reason.desc}
+              </p>
             </article>
           ))}
         </div>
@@ -1014,12 +1105,19 @@ function Trust() {
             {trustItems.map(([Icon, title, desc]) => (
               <div
                 key={title}
-                className="flex items-start gap-4 rounded-lg border border-slate-200 bg-[#FAFAF8] p-5"
+                className={cn(
+                  'flex items-start gap-4 rounded-lg border border-slate-200 bg-[#FAFAF8] p-5 shadow-sm shadow-black/[0.025]',
+                  interactiveCardClasses
+                )}
               >
-                <IconBadge icon={Icon} tone="emerald" />
+                <IconBadge icon={Icon} tone="emerald" className={interactiveIconClasses} />
                 <div>
-                  <h3 className="text-base font-bold text-[#171615]">{title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{desc}</p>
+                  <h3 className={cn('text-base font-bold text-[#171615]', interactiveTitleClasses)}>
+                    {title}
+                  </h3>
+                  <p className={cn('mt-1 text-sm leading-6 text-slate-600', interactiveTextClasses)}>
+                    {desc}
+                  </p>
                 </div>
               </div>
             ))}
@@ -1133,7 +1231,7 @@ function CTAFinal() {
   return (
     <section className="bg-white py-16 sm:py-24">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <div className="overflow-hidden rounded-lg bg-[#111111] px-6 py-12 text-center text-white shadow-2xl shadow-black/[0.16] sm:px-10 sm:py-16">
+        <div className={cn('overflow-hidden rounded-lg px-6 py-12 text-center text-white shadow-2xl shadow-black/[0.16] sm:px-10 sm:py-16', graphiteSurface)}>
           <Eyebrow dark className="mb-4 text-orange-300">
             Siguiente paso
           </Eyebrow>

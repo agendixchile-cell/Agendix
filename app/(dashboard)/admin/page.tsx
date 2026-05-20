@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { isDemoMode } from '@/lib/auth/demo'
-import { demoReservas } from '@/lib/reservas/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import {
   hasFeature,
   getPatientLimit,
@@ -63,8 +63,9 @@ export default async function AdminPage() {
     )
   }
 
+  const demoDataset = demoMode ? getDemoPlanDataset(context.planId) : null
   const rows: ReservationStatusRow[] = demoMode
-    ? demoReservas.map((reserva) => ({
+    ? (demoDataset?.reservas ?? []).map((reserva) => ({
         estado: reserva.estado,
         profesional_id: reserva.profesional.id,
       }))

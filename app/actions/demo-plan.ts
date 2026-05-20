@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
-import { demoPlanCookieName } from '@/lib/subscription/server'
+import { demoPlanCookieName } from '@/lib/demo-plan'
 import { normalizePlanId, type PlanId } from '@/lib/plans'
 
 export async function setDemoPlanAction(planId: PlanId) {
@@ -26,9 +26,13 @@ export async function setDemoPlanAction(planId: PlanId) {
   revalidatePath('/reservas')
   revalidatePath('/pacientes')
   revalidatePath('/profesionales')
+  revalidatePath('/dashboard')
+  revalidatePath('/estadisticas')
+  revalidatePath('/fichas-clinicas')
   revalidatePath('/configuracion')
   revalidatePath('/configuracion/plan')
   revalidatePath('/admin')
+  revalidatePath('/agendar/[slug]', 'page')
 
   return {
     ok: true,

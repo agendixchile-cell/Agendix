@@ -2,18 +2,14 @@ import { redirect } from 'next/navigation'
 import { FichasClinicasManager } from '@/components/fichas/fichas-clinicas-manager'
 import { EmptyState } from '@/components/ui/empty-state'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
-import {
-  demoEvolucionesSesion,
-  demoFichasClinicas,
-} from '@/lib/fichas/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import type {
   EvolucionSesionListItem,
   FichaClinicaListItem,
 } from '@/lib/fichas/types'
-import { demoPacientes } from '@/lib/pacientes/demo'
 import type { PacienteListItem } from '@/lib/pacientes/types'
-import { demoReservas } from '@/lib/reservas/demo'
 import type { ReservaListItem, ReservaQueryRow } from '@/lib/reservas/types'
+import { getDemoPlanId } from '@/lib/subscription/server'
 import { createClient } from '@/lib/supabase/server'
 import type { RolCentro } from '@/lib/types/database'
 import { ClipboardX } from 'lucide-react'
@@ -72,14 +68,18 @@ export default async function FichasClinicasPage({
   const demoMode = isDemoMode()
 
   if (demoMode) {
+    const planId = await getDemoPlanId()
+    const dataset = getDemoPlanDataset(planId)
+
     return (
       <FichasClinicasManager
-        initialPacientes={demoPacientes}
-        initialFichas={demoFichasClinicas}
-        initialEvoluciones={demoEvolucionesSesion}
-        initialReservas={demoReservas}
+        initialPacientes={dataset.pacientes}
+        initialFichas={dataset.fichas}
+        initialEvoluciones={dataset.evoluciones}
+        initialReservas={dataset.reservas}
         initialSelectedPacienteId={paciente}
         demoMode
+        demoPlanId={planId}
       />
     )
   }

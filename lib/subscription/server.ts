@@ -1,7 +1,6 @@
 import { cookies } from 'next/headers'
-import { demoCentro } from '@/lib/centro/demo'
-import { demoPacientes } from '@/lib/pacientes/demo'
-import { demoProfesionales } from '@/lib/profesionales/demo'
+import { demoPlanCookieName } from '@/lib/demo-plan'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import {
   canAddProfessional,
   canCreateActivePatient,
@@ -14,8 +13,6 @@ import {
 } from '@/lib/plans'
 import { normalizeOrganizationRole, type OrganizationRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/server'
-
-export const demoPlanCookieName = 'agendix-demo-plan'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -96,22 +93,25 @@ export async function getDemoPlanId(): Promise<PlanId> {
 
 export async function getDemoSubscriptionContext(): Promise<OrganizationSubscriptionContext> {
   const planId = await getDemoPlanId()
+  const dataset = getDemoPlanDataset(planId)
 
   return {
-    organizationId: demoCentro.id,
-    organizationName: demoCentro.nombre,
-    organizationSlug: demoCentro.slug,
+    organizationId: dataset.centro.id,
+    organizationName: dataset.centro.nombre,
+    organizationSlug: dataset.centro.slug,
     role: 'owner',
     planId,
     plan: getPlan(planId),
     status: 'trial',
     extraProfessionalsCount: 0,
     usage: {
-      professionals: demoProfesionales.filter((profesional) => profesional.activo)
+      professionals: dataset.profesionales.filter((profesional) => profesional.activo)
         .length,
-      activePatients: demoPacientes.filter((paciente) => paciente.activo !== false)
+      activePatients: dataset.pacientes.filter((paciente) => paciente.activo !== false)
         .length,
-      upcomingReservations: 0,
+      upcomingReservations: dataset.reservas.filter((reserva) =>
+        ['pending', 'confirmed'].includes(reserva.estado)
+      ).length,
     },
   }
 }

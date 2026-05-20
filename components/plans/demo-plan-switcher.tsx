@@ -1,45 +1,113 @@
 'use client'
 
-import { useTransition } from 'react'
-import { useRouter } from 'next/navigation'
-import { setDemoPlanAction } from '@/app/actions/demo-plan'
+import { CreditCard, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { useDemoPlan } from '@/hooks/use-demo-plan'
 import { Badge } from '@/components/ui/badge'
-import { planIds, subscriptionPlans, type PlanId } from '@/lib/plans'
+import {
+  formatPlanPrice,
+  planIds,
+  subscriptionPlans,
+  type PlanId,
+} from '@/lib/plans'
+import { cn } from '@/lib/utils'
 
 type DemoPlanSwitcherProps = {
   currentPlanId: PlanId
+  collapsed?: boolean
+  className?: string
+  surface?: 'card' | 'sidebar'
 }
 
-export function DemoPlanSwitcher({ currentPlanId }: DemoPlanSwitcherProps) {
-  const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-
+export function DemoPlanSwitcher({
+  currentPlanId,
+  collapsed = false,
+  className,
+  surface = 'card',
+}: DemoPlanSwitcherProps) {
   if (process.env.NODE_ENV === 'production') return null
 
-  const onChange = (planId: PlanId) => {
-    startTransition(async () => {
-      await setDemoPlanAction(planId)
-      router.refresh()
-    })
+  if (collapsed) {
+    const initialPlan = subscriptionPlans[currentPlanId]
+
+    return (
+      <Link
+        href="/configuracion/plan"
+        className={cn(
+          'flex h-10 w-10 items-center justify-center rounded-xl border border-orange-200 bg-orange-50 text-orange-600 transition-colors hover:bg-orange-100',
+          className
+        )}
+        aria-label={`Plan demo actual: ${initialPlan.commercialName}`}
+        title={`Plan demo: ${initialPlan.shortName}`}
+      >
+        <CreditCard size={16} aria-hidden="true" />
+      </Link>
+    )
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-900/[0.03]">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <ExpandedDemoPlanSwitcher
+      currentPlanId={currentPlanId}
+      className={className}
+      surface={surface}
+    />
+  )
+}
+
+function ExpandedDemoPlanSwitcher({
+  currentPlanId,
+  className,
+  surface,
+}: {
+  currentPlanId: PlanId
+  className?: string
+  surface: 'card' | 'sidebar'
+}) {
+  const { planId, plan, isPending, changePlan } = useDemoPlan(currentPlanId)
+
+  return (
+    <div
+      className={cn(
+        'rounded-2xl border shadow-sm shadow-slate-900/[0.03]',
+        surface === 'sidebar'
+          ? 'border-orange-200/70 bg-orange-50/70 p-3'
+          : 'border-slate-200/80 bg-white p-4',
+        className
+      )}
+    >
+      <div
+        className={cn(
+          'flex flex-col gap-3',
+          surface === 'card' && 'sm:flex-row sm:items-center sm:justify-between'
+        )}
+      >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-slate-800">Simular plan</p>
-            <Badge tone="slate">Dev</Badge>
+            <Sparkles
+              size={15}
+              className="shrink-0 text-orange-500"
+              aria-hidden="true"
+            />
+            <p className="truncate text-sm font-semibold text-slate-900">
+              Plan actual en demo
+            </p>
+            <Badge tone="slate">Local</Badge>
           </div>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Cambia el plan demo para validar límites, bloqueos y métricas.
+          <p className="mt-2 truncate text-sm font-bold text-slate-900">
+            {plan.commercialName}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            {formatPlanPrice(plan.monthlyPriceClp)} / mes · {plan.audience}
           </p>
         </div>
         <select
-          value={currentPlanId}
-          onChange={(event) => onChange(event.target.value as PlanId)}
+          value={planId}
+          onChange={(event) => changePlan(event.target.value as PlanId)}
           disabled={isPending}
-          className="agendix-select min-w-[220px]"
+          className={cn(
+            'agendix-select',
+            surface === 'card' ? 'min-w-[220px]' : 'w-full'
+          )}
           aria-label="Simular plan comercial"
         >
           {planIds.map((planId) => (

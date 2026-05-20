@@ -10,7 +10,9 @@ import {
   HeartPulse,
   ReceiptText,
   Settings,
+  ShieldCheck,
   UserRoundCog,
+  Video,
   type LucideIcon,
 } from 'lucide-react'
 import { getRecordatoriosCentro } from '@/app/actions/centro'
@@ -18,12 +20,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
-import { demoCentro, demoRecordatoriosConfig } from '@/lib/centro/demo'
+import { demoCentro } from '@/lib/centro/demo'
 import { defaultHorariosCentro } from '@/lib/centro/horarios'
-import { demoProfesionales } from '@/lib/profesionales/demo'
-import { demoSalas } from '@/lib/salas/demo'
-import { demoServicios } from '@/lib/servicios/demo'
-import { subscriptionStatusLabels } from '@/lib/plans'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
+import { hasFeature, subscriptionStatusLabels } from '@/lib/plans'
 import {
   getDemoSubscriptionContext,
   getPlanSnapshotForCentro,
@@ -117,6 +117,9 @@ async function getRealConfigData() {
       horariosStatus: 'Horario pendiente',
       recordatoriosText: 'Pendiente de configurar',
       planText: 'Individual · Trial',
+      rolesStatus: 'Disponible desde Center',
+      adminStatus: 'No aplica en Individual',
+      telemedicineStatus: 'Disponible desde Center Pro',
     }
   }
 
@@ -173,30 +176,51 @@ async function getRealConfigData() {
       whatsappMode: recordatorios.whatsapp_mode,
     }),
     planText: `${planSnapshot.plan.shortName} · ${subscriptionStatusLabels[planSnapshot.status]}`,
+    rolesStatus: hasFeature(planSnapshot.planId, 'roles_permissions')
+      ? 'Roles activos'
+      : 'Disponible desde Center',
+    adminStatus: hasFeature(planSnapshot.planId, 'admin_panel')
+      ? 'Panel administrativo activo'
+      : 'No aplica en Individual',
+    telemedicineStatus: hasFeature(planSnapshot.planId, 'meeting_links')
+      ? 'Enlaces Meet/Zoom activos'
+      : 'Disponible desde Center Pro',
   }
 }
 
 async function getDemoConfigData() {
   const subscription = await getDemoSubscriptionContext()
+  const dataset = getDemoPlanDataset(subscription.planId)
 
   return {
-    centroNombre: demoCentro.nombre,
-    slug: demoCentro.slug,
-    centroActivo: demoCentro.activo,
+    centroNombre: dataset.centro.nombre,
+    slug: dataset.centro.slug,
+    centroActivo: dataset.centro.activo,
     publicBookingEnabled: true,
-    serviciosCount: demoServicios.filter((servicio) => servicio.activo).length,
-    profesionalesCount: demoProfesionales.filter(
+    serviciosCount: dataset.servicios.filter((servicio) => servicio.activo).length,
+    profesionalesCount: dataset.profesionales.filter(
       (profesional) => profesional.activo
     ).length,
-    salasCount: demoSalas.filter((sala) => sala.activa).length,
-    horariosStatus: activeDaysLabel(defaultHorariosCentro),
+    salasCount: dataset.salas.filter((sala) => sala.activa).length,
+    horariosStatus: activeDaysLabel(dataset.horarios),
     recordatoriosText: recordatoriosStatus({
-      emailEnabled: demoRecordatoriosConfig.email_enabled,
-      emailHoursBefore: demoRecordatoriosConfig.email_hours_before,
-      whatsappEnabled: demoRecordatoriosConfig.whatsapp_enabled,
-      whatsappMode: demoRecordatoriosConfig.whatsapp_mode,
+      emailEnabled: dataset.recordatorios.email_enabled,
+      emailHoursBefore: dataset.recordatorios.email_hours_before,
+      whatsappEnabled: dataset.recordatorios.whatsapp_enabled,
+      whatsappMode: dataset.recordatorios.whatsapp_mode,
     }),
     planText: `${subscription.plan.shortName} · ${subscriptionStatusLabels[subscription.status]}`,
+    rolesStatus: hasFeature(subscription.planId, 'roles_permissions')
+      ? subscription.planId === 'enterprise'
+        ? 'Roles avanzados preparados'
+        : 'Admin, profesional y recepcion'
+      : 'Disponible desde Center',
+    adminStatus: hasFeature(subscription.planId, 'admin_panel')
+      ? 'Panel administrativo activo'
+      : 'No aplica en Individual',
+    telemedicineStatus: hasFeature(subscription.planId, 'meeting_links')
+      ? 'Enlaces Meet/Zoom activos'
+      : 'Disponible desde Center Pro',
   }
 }
 
@@ -234,6 +258,37 @@ export default async function ConfiguracionPage() {
       actionLabel: 'Ver equipo',
       href: '/profesionales',
       icon: UserRoundCog,
+    },
+    {
+      title: 'Roles y permisos',
+      description: 'Simula permisos de administrador, profesional y recepción.',
+      status: data.rolesStatus,
+      actionLabel: data.rolesStatus.includes('Disponible') ? 'Ver plan' : 'Gestionar',
+      href: data.rolesStatus.includes('Disponible') ? '/configuracion/plan' : '/admin',
+      icon: ShieldCheck,
+      tone: data.rolesStatus.includes('Disponible') ? 'slate' : 'green',
+    },
+    {
+      title: 'Panel administrativo',
+      description: 'Vista de operación del centro, equipo, capacidad y actividad.',
+      status: data.adminStatus,
+      actionLabel: data.adminStatus.includes('No aplica') ? 'Ver plan' : 'Abrir panel',
+      href: data.adminStatus.includes('No aplica') ? '/configuracion/plan' : '/admin',
+      icon: Building2,
+      tone: data.adminStatus.includes('No aplica') ? 'slate' : 'orange',
+    },
+    {
+      title: 'Telemedicina',
+      description: 'Campos de enlace Meet o Zoom dentro de las reservas.',
+      status: data.telemedicineStatus,
+      actionLabel: data.telemedicineStatus.includes('Disponible')
+        ? 'Ver plan'
+        : 'Abrir agenda',
+      href: data.telemedicineStatus.includes('Disponible')
+        ? '/configuracion/plan'
+        : '/agenda',
+      icon: Video,
+      tone: data.telemedicineStatus.includes('Disponible') ? 'slate' : 'blue',
     },
     {
       title: 'Salas',

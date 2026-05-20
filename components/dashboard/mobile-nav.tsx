@@ -4,18 +4,23 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Menu, X } from 'lucide-react'
 import { AgendixWordmark } from '@/components/brand/agendix-brand'
+import type { PlanId } from '@/lib/plans'
 import { Sidebar } from './sidebar'
 
 type MobileNavProps = {
   userName: string
   userInitial: string
   sessionLabel: string
+  demoMode?: boolean
+  demoPlanId?: PlanId
 }
 
 export function MobileNav({
   userName,
   userInitial,
   sessionLabel,
+  demoMode,
+  demoPlanId,
 }: MobileNavProps) {
   const [open, setOpen] = useState(false)
   const portalTarget =
@@ -60,6 +65,8 @@ export function MobileNav({
                   userName={userName}
                   userInitial={userInitial}
                   sessionLabel={sessionLabel}
+                  demoMode={demoMode}
+                  demoPlanId={demoPlanId}
                 />
               </div>
             </div>
