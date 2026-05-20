@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import {
   AtSign,
   Edit3,
@@ -25,9 +25,11 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
+import { EntityImage } from '@/components/ui/entity-image'
 import { FeedbackBanner, type FeedbackMessage } from '@/components/ui/feedback-banner'
 import { Field } from '@/components/ui/field'
 import { FormModal } from '@/components/ui/form-modal'
+import { ImageUploadField } from '@/components/ui/image-upload-field'
 import { MetricStrip } from '@/components/ui/metric-strip'
 import { PageHeader } from '@/components/ui/page-header'
 import { SearchField } from '@/components/ui/search-field'
@@ -46,10 +48,26 @@ import {
   profesionalSchema,
   type ProfesionalFormValues,
 } from '@/lib/profesionales/validation'
+import {
+  readDemoStorageItem,
+  removeDemoStorageItem,
+  writeDemoStorageItem,
+} from '@/lib/demo-storage'
+import {
+  PROFESSIONAL_AVATARS_BUCKET,
+  buildProfileImageStoragePath,
+} from '@/lib/images/config'
+import {
+  readImageAsDataUrl,
+  removeUploadedPublicImage,
+  uploadPublicImage,
+  type UploadedPublicImage,
+} from '@/lib/images/client'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 type ProfesionalesManagerProps = {
   initialProfesionales: ProfesionalListItem[]
+  centroId: string
   demoMode: boolean
   loadError?: string
   planContext?: PlanUsageContext
@@ -78,8 +96,6 @@ const emptyValues: ProfesionalFormValues = {
   activo: true,
 }
 
-const demoStorageKey = 'agendix-demo-profesionales'
-
 function nowIso() {
   return new Date().toISOString()
 }
@@ -90,6 +106,12 @@ function demoId(prefix: string) {
   }
 
   return `${prefix}-${Date.now()}`
+}
+
+function revokePreviewUrl(url: string | null) {
+  if (url?.startsWith('blob:')) {
+    URL.revokeObjectURL(url)
+  }
 }
 
 function formatSpecialty(profesional: ProfesionalListItem) {
@@ -116,6 +138,7 @@ function formatAgenda(profesional: ProfesionalListItem) {
 
 export function ProfesionalesManager({
   initialProfesionales,
+  centroId,
   demoMode,
   loadError,
   planContext,
@@ -130,7 +153,13 @@ export function ProfesionalesManager({
   const [pendingProfesionalId, setPendingProfesionalId] = useState<string | null>(
     null
   )
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  const [imageMarkedForRemoval, setImageMarkedForRemoval] = useState(false)
+  const [imageUploadPending, setImageUploadPending] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const demoPlanId = planContext?.planId
+  const isSaving = isPending || imageUploadPending
 
   const activeCount = useMemo(
     () => profesionales.filter((profesional) => profesional.activo).length,
@@ -173,16 +202,21 @@ export function ProfesionalesManager({
     resolver: zodResolver(profesionalSchema),
     defaultValues: emptyValues,
   })
+  const watchedProfesionalName =
+    useWatch({ control: form.control, name: 'nombre' }) ?? ''
 
   useEffect(() => {
     if (!demoMode) return
 
-    migrateLegacyAgendixStorage()
+    migrateLegacyAgendixStorage(demoPlanId)
 
     let storedValue: ProfesionalListItem[] | null = null
 
     try {
-      const storedProfesionales = window.localStorage.getItem(demoStorageKey)
+      const storedProfesionales = readDemoStorageItem(
+        demoPlanId,
+        'profesionales'
+      )
 
       if (storedProfesionales) {
         const parsedProfesionales = JSON.parse(storedProfesionales)
@@ -191,6 +225,7 @@ export function ProfesionalesManager({
           storedValue = (parsedProfesionales as ProfesionalListItem[]).map(
             (profesional) => ({
               ...profesional,
+              avatar_url: profesional.avatar_url ?? null,
               descanso_entre_reservas_minutos:
                 profesional.descanso_entre_reservas_minutos ?? 0,
               duracion_sesion_minutos:
@@ -204,19 +239,86 @@ export function ProfesionalesManager({
         }
       }
     } catch {
-      window.localStorage.removeItem(demoStorageKey)
+      removeDemoStorageItem(demoPlanId, 'profesionales')
     }
 
     window.setTimeout(() => {
-      if (storedValue) {
-        setProfesionales(storedValue)
-      }
+      setProfesionales(storedValue ?? initialProfesionales)
     }, 0)
-  }, [demoMode])
+  }, [demoMode, demoPlanId, initialProfesionales])
+
+  useEffect(() => () => revokePreviewUrl(imagePreviewUrl), [imagePreviewUrl])
 
   const saveDemoProfesionales = (nextProfesionales: ProfesionalListItem[]) => {
     setProfesionales(nextProfesionales)
-    window.localStorage.setItem(demoStorageKey, JSON.stringify(nextProfesionales))
+    writeDemoStorageItem(
+      demoPlanId,
+      'profesionales',
+      JSON.stringify(nextProfesionales)
+    )
+  }
+
+  const resetImageDraft = () => {
+    setImagePreviewUrl((current) => {
+      revokePreviewUrl(current)
+      return null
+    })
+    setImageFile(null)
+    setImageMarkedForRemoval(false)
+  }
+
+  const selectImageFile = (file: File) => {
+    setImagePreviewUrl((current) => {
+      revokePreviewUrl(current)
+      return URL.createObjectURL(file)
+    })
+    setImageFile(file)
+    setImageMarkedForRemoval(false)
+  }
+
+  const removeImage = () => {
+    setImagePreviewUrl((current) => {
+      revokePreviewUrl(current)
+      return null
+    })
+    setImageFile(null)
+    setImageMarkedForRemoval(true)
+  }
+
+  const resolveAvatarUpdate = async (): Promise<{
+    avatarUrl?: string | null
+    uploadedImage?: UploadedPublicImage
+  }> => {
+    if (imageFile && demoMode) {
+      return { avatarUrl: await readImageAsDataUrl(imageFile) }
+    }
+
+    if (imageFile) {
+      if (!centroId) {
+        throw new Error('No pudimos identificar el centro para subir la imagen.')
+      }
+
+      const entityId =
+        modal?.mode === 'edit' ? modal.profesional.id : `nuevo-${demoId('avatar')}`
+      const uploadedImage = await uploadPublicImage({
+        bucket: PROFESSIONAL_AVATARS_BUCKET,
+        path: buildProfileImageStoragePath({
+          centroId,
+          entityId,
+          file: imageFile,
+          folder: 'professionals',
+        }),
+        file: imageFile,
+      })
+
+      return { avatarUrl: uploadedImage.publicUrl, uploadedImage }
+    }
+
+    if (imageMarkedForRemoval) {
+      return { avatarUrl: null }
+    }
+
+    return { avatarUrl: undefined }
   }
 
   const openCreate = () => {
@@ -231,12 +333,14 @@ export function ProfesionalesManager({
       })
       return
     }
+    resetImageDraft()
     form.reset(emptyValues)
     setModal({ mode: 'create' })
   }
 
   const openEdit = (profesional: ProfesionalListItem) => {
     setFeedback(null)
+    resetImageDraft()
     form.reset({
       nombre: profesional.nombre,
       email: profesional.email,
@@ -255,6 +359,7 @@ export function ProfesionalesManager({
 
   const closeModal = () => {
     setModal(null)
+    resetImageDraft()
     form.reset(emptyValues)
   }
 
@@ -263,7 +368,10 @@ export function ProfesionalesManager({
     setFeedback({ type: 'success', message: 'Demo restablecido.' })
   }
 
-  const handleDemoSave = (values: ProfesionalFormValues) => {
+  const handleDemoSave = async (
+    values: ProfesionalFormValues,
+    avatarUrl?: string | null
+  ) => {
     const normalizedEmail = values.email.trim().toLowerCase()
     const duplicateEmail = profesionales.some(
       (profesional) =>
@@ -305,6 +413,8 @@ export function ProfesionalesManager({
         email: normalizedEmail,
         telefono: values.telefono?.trim() || null,
         especialidad: values.especialidad?.trim() || null,
+        avatar_url:
+          avatarUrl === undefined ? modal.profesional.avatar_url : avatarUrl,
         recordatorio_email_subject:
           values.recordatorio_email_subject?.trim() || null,
         recordatorio_email_body: values.recordatorio_email_body?.trim() || null,
@@ -359,6 +469,7 @@ export function ProfesionalesManager({
       email: normalizedEmail,
       telefono: values.telefono?.trim() || null,
       especialidad: values.especialidad?.trim() || null,
+      avatar_url: avatarUrl ?? null,
       recordatorio_email_subject: values.recordatorio_email_subject?.trim() || null,
       recordatorio_email_body: values.recordatorio_email_body?.trim() || null,
       descanso_entre_reservas_minutos:
@@ -379,38 +490,66 @@ export function ProfesionalesManager({
   const onSubmit = form.handleSubmit((values) => {
     if (!modal) return
 
-    if (demoMode) {
-      handleDemoSave(values)
-      return
-    }
-
     startTransition(async () => {
-      const result =
-        modal.mode === 'edit'
-          ? await updateProfesionalAction(modal.profesional.id, values)
-          : await createProfesionalAction(values)
+      let uploadedImage: UploadedPublicImage | undefined
 
-      if (!result.ok) {
-        setFeedback({ type: 'error', message: result.message })
-        return
-      }
+      try {
+        setImageUploadPending(true)
+        const imageUpdate = await resolveAvatarUpdate()
+        uploadedImage = imageUpdate.uploadedImage
 
-      if (result.profesional) {
-        const savedProfesional = result.profesional
-        setProfesionales((current) =>
+        if (demoMode) {
+          await handleDemoSave(values, imageUpdate.avatarUrl)
+          return
+        }
+
+        const result =
           modal.mode === 'edit'
-            ? current.map((profesional) =>
-                profesional.id === savedProfesional.id
-                  ? savedProfesional
-                  : profesional
+            ? await updateProfesionalAction(
+                modal.profesional.id,
+                values,
+                imageUpdate.avatarUrl
               )
-            : [savedProfesional, ...current]
-        )
-      }
+            : await createProfesionalAction(values, imageUpdate.avatarUrl)
 
-      setFeedback({ type: 'success', message: result.message })
-      closeModal()
-      router.refresh()
+        if (!result.ok) {
+          if (uploadedImage) {
+            await removeUploadedPublicImage(uploadedImage).catch(() => null)
+          }
+          setFeedback({ type: 'error', message: result.message })
+          return
+        }
+
+        if (result.profesional) {
+          const savedProfesional = result.profesional
+          setProfesionales((current) =>
+            modal.mode === 'edit'
+              ? current.map((profesional) =>
+                  profesional.id === savedProfesional.id
+                    ? savedProfesional
+                    : profesional
+                )
+              : [savedProfesional, ...current]
+          )
+        }
+
+        setFeedback({ type: 'success', message: result.message })
+        closeModal()
+        router.refresh()
+      } catch (error) {
+        if (uploadedImage) {
+          await removeUploadedPublicImage(uploadedImage).catch(() => null)
+        }
+        setFeedback({
+          type: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'No pudimos guardar la imagen del profesional.',
+        })
+      } finally {
+        setImageUploadPending(false)
+      }
     })
   })
 
@@ -585,6 +724,23 @@ export function ProfesionalesManager({
           onClose={closeModal}
         >
           <form onSubmit={onSubmit} className="space-y-5 px-5 py-5" noValidate>
+            <ImageUploadField
+              label="Foto de perfil"
+              description="Se usará internamente y en el portal público cuando pacientes elijan profesional."
+              entityName={
+                watchedProfesionalName || modal.profesional?.nombre || 'Profesional'
+              }
+              imageUrl={modal.profesional?.avatar_url ?? null}
+              previewUrl={imagePreviewUrl}
+              markedForRemoval={imageMarkedForRemoval}
+              variant="avatar"
+              disabled={isSaving}
+              uploading={imageUploadPending}
+              onFileSelect={selectImageFile}
+              onRemove={removeImage}
+              onRestore={resetImageDraft}
+            />
+
             <Field label="Nombre" error={form.formState.errors.nombre?.message}>
               <input
                 type="text"
@@ -755,9 +911,11 @@ export function ProfesionalesManager({
               <Button type="button" variant="secondary" onClick={closeModal}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isPending}>
-                {isPending
-                  ? 'Guardando...'
+              <Button type="submit" disabled={isSaving}>
+                {isSaving
+                  ? imageUploadPending
+                    ? 'Subiendo imagen...'
+                    : 'Guardando...'
                   : modal.mode === 'edit'
                     ? 'Guardar cambios'
                     : 'Crear profesional'}
@@ -829,9 +987,11 @@ function ProfesionalesList({
               <tr key={profesional.id} className="transition hover:bg-slate-50/60">
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-sm font-bold text-orange-600 ring-1 ring-orange-200/60">
-                      {profesional.nombre.charAt(0).toUpperCase()}
-                    </div>
+                    <EntityImage
+                      src={profesional.avatar_url}
+                      name={profesional.nombre}
+                      size="sm"
+                    />
                     <div>
                       <p className="font-semibold text-slate-800">
                         {profesional.nombre}
@@ -900,9 +1060,11 @@ function ProfesionalesList({
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-sm font-bold text-orange-600 ring-1 ring-orange-200/60">
-                  {profesional.nombre.charAt(0).toUpperCase()}
-                </div>
+                <EntityImage
+                  src={profesional.avatar_url}
+                  name={profesional.nombre}
+                  size="sm"
+                />
                 <div>
                   <h3 className="font-semibold text-slate-800">
                     {profesional.nombre}

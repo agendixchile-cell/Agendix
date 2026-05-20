@@ -2,6 +2,12 @@
 
 import { revalidatePath } from 'next/cache'
 import { isDemoMode } from '@/lib/auth/demo'
+import { revalidateCentroPublicPaths } from '@/lib/centro/public-revalidation'
+import {
+  CENTER_LOGOS_BUCKET,
+  normalizePublicImageUrl,
+  storagePathFromPublicUrl,
+} from '@/lib/images/config'
 import {
   centroSchema,
   horariosCentroSchema,
@@ -58,6 +64,10 @@ function formatCentroPayload(values: CentroFormValues) {
   }
 }
 
+type CentroPayload = ReturnType<typeof formatCentroPayload> & {
+  logo_url?: string | null
+}
+
 function supabaseError(message?: string): string {
   const error = message?.toLowerCase() ?? ''
 
@@ -73,7 +83,8 @@ function supabaseError(message?: string): string {
 }
 
 export async function updateCentroAction(
-  values: CentroFormValues
+  values: CentroFormValues,
+  logoUrl?: string | null
 ): Promise<CentroActionState> {
   const parsed = centroSchema.safeParse(values)
 
@@ -91,9 +102,32 @@ export async function updateCentroAction(
     return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
   }
 
+  const normalizedLogoUrl = normalizePublicImageUrl(logoUrl)
+  let previousLogoUrl: string | null = null
+
+  if (normalizedLogoUrl !== undefined) {
+    const { data: currentCentro, error: currentCentroError } = await supabase
+      .from('centros')
+      .select('logo_url')
+      .eq('id', centroId)
+      .maybeSingle()
+
+    if (currentCentroError) {
+      return { ok: false, message: supabaseError(currentCentroError.message) }
+    }
+
+    previousLogoUrl = currentCentro?.logo_url ?? null
+  }
+
+  const payload: CentroPayload = formatCentroPayload(parsed.data)
+
+  if (normalizedLogoUrl !== undefined) {
+    payload.logo_url = normalizedLogoUrl
+  }
+
   const { data, error: updateError } = await supabase
     .from('centros')
-    .update(formatCentroPayload(parsed.data))
+    .update(payload)
     .eq('id', centroId)
     .select(centroSelect)
     .single()
@@ -102,8 +136,20 @@ export async function updateCentroAction(
     return { ok: false, message: supabaseError(updateError?.message) }
   }
 
+  if (normalizedLogoUrl !== undefined && previousLogoUrl !== normalizedLogoUrl) {
+    const previousPath = storagePathFromPublicUrl(previousLogoUrl, CENTER_LOGOS_BUCKET)
+
+    if (previousPath) {
+      await supabase.storage
+        .from(CENTER_LOGOS_BUCKET)
+        .remove([previousPath])
+        .catch(() => null)
+    }
+  }
+
   revalidatePath('/centro')
   revalidatePath('/agenda')
+  await revalidateCentroPublicPaths(supabase, centroId)
 
   return {
     ok: true,

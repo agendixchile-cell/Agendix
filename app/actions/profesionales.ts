@@ -4,6 +4,11 @@ import { revalidatePath } from 'next/cache'
 import { isDemoMode } from '@/lib/auth/demo'
 import { revalidateCentroPublicPaths } from '@/lib/centro/public-revalidation'
 import {
+  PROFESSIONAL_AVATARS_BUCKET,
+  normalizePublicImageUrl,
+  storagePathFromPublicUrl,
+} from '@/lib/images/config'
+import {
   profesionalSchema,
   type ProfesionalFormValues,
 } from '@/lib/profesionales/validation'
@@ -19,7 +24,7 @@ import { getAdminCentroId } from '@/lib/supabase/get-centro-id'
 import { validateProfessionalCapacity } from '@/lib/subscription/server'
 
 const profesionalSelect =
-  'id,profile_id,rol,especialidad,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono)'
+  'id,profile_id,rol,especialidad,avatar_url,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono,avatar_url)'
 
 type ProfesionalReminderConfig = {
   email_subject_template: string | null
@@ -40,6 +45,7 @@ function toProfesionalListItem(
     email: profile?.email ?? '',
     telefono: profile?.telefono ?? null,
     especialidad: miembro.especialidad ?? null,
+    avatar_url: miembro.avatar_url ?? profile?.avatar_url ?? null,
     descanso_entre_reservas_minutos:
       miembro.descanso_entre_reservas_minutos ?? 0,
     duracion_sesion_minutos: miembro.duracion_sesion_minutos ?? 60,
@@ -97,12 +103,37 @@ async function syncProfesionalReminderConfig(
   return { error, reminderConfig }
 }
 
-function formatProfilePayload(values: ProfesionalFormValues) {
-  return {
+type ProfilePayload = {
+  nombre: string
+  email: string
+  telefono: string | null
+  avatar_url?: string | null
+}
+
+type MembershipUpdatePayload = {
+  activo: boolean
+  especialidad: string | null
+  avatar_url?: string | null
+  descanso_entre_reservas_minutos: number
+  duracion_sesion_minutos: number
+  intervalo_reservas_minutos: number
+}
+
+function formatProfilePayload(
+  values: ProfesionalFormValues,
+  avatarUrl?: string | null
+) {
+  const payload: ProfilePayload = {
     nombre: values.nombre.trim(),
     email: values.email.trim().toLowerCase(),
     telefono: values.telefono?.trim() || null,
   }
+
+  if (avatarUrl !== undefined) {
+    payload.avatar_url = avatarUrl
+  }
+
+  return payload
 }
 
 function supabaseError(message?: string): string {
@@ -134,6 +165,17 @@ async function revalidateProfesionalPaths(
   revalidatePath('/profesionales')
   revalidatePath('/agenda')
   await revalidateCentroPublicPaths(supabase, centroId)
+}
+
+async function removeStoredProfessionalImage(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  imageUrl: string | null | undefined
+) {
+  const path = storagePathFromPublicUrl(imageUrl, PROFESSIONAL_AVATARS_BUCKET)
+
+  if (!path) return
+
+  await supabase.storage.from(PROFESSIONAL_AVATARS_BUCKET).remove([path])
 }
 
 async function fetchProfesionalByMembership(
@@ -174,10 +216,11 @@ async function fetchProfesionalByMembership(
 
 async function findOrCreateProfile(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  values: ProfesionalFormValues
+  values: ProfesionalFormValues,
+  avatarUrl?: string | null
 ) {
   const email = values.email.trim().toLowerCase()
-  const profilePayload = formatProfilePayload(values)
+  const profilePayload = formatProfilePayload(values, avatarUrl)
 
   const { data: existingProfile, error: profileLookupError } = await supabase
     .from('profiles')
@@ -223,7 +266,8 @@ async function findOrCreateProfile(
 }
 
 export async function createProfesionalAction(
-  values: ProfesionalFormValues
+  values: ProfesionalFormValues,
+  avatarUrl?: string | null
 ): Promise<ProfesionalActionState> {
   const parsed = profesionalSchema.safeParse(values)
 
@@ -247,9 +291,11 @@ export async function createProfesionalAction(
     return { ok: false, message: capacity.message }
   }
 
+  const normalizedAvatarUrl = normalizePublicImageUrl(avatarUrl)
   const { profile, error: profileError } = await findOrCreateProfile(
     supabase,
-    parsed.data
+    parsed.data,
+    normalizedAvatarUrl
   )
 
   if (profileError || !profile) {
@@ -274,6 +320,9 @@ export async function createProfesionalAction(
     }
   }
 
+  const effectiveAvatarUrl =
+    normalizedAvatarUrl === undefined ? profile.avatar_url : normalizedAvatarUrl
+
   const { data: membership, error: insertMembershipError } = await supabase
     .from('miembros_centro')
     .insert({
@@ -281,6 +330,7 @@ export async function createProfesionalAction(
       profile_id: profile.id,
       rol: 'profesional',
       especialidad: parsed.data.especialidad?.trim() || null,
+      avatar_url: effectiveAvatarUrl,
       descanso_entre_reservas_minutos:
         parsed.data.descanso_entre_reservas_minutos,
       duracion_sesion_minutos: parsed.data.duracion_sesion_minutos,
@@ -323,6 +373,7 @@ export async function createProfesionalAction(
       email: profile.email,
       telefono: profile.telefono,
       especialidad: parsed.data.especialidad?.trim() || null,
+      avatar_url: effectiveAvatarUrl,
       descanso_entre_reservas_minutos:
         parsed.data.descanso_entre_reservas_minutos,
       duracion_sesion_minutos: parsed.data.duracion_sesion_minutos,
@@ -335,7 +386,8 @@ export async function createProfesionalAction(
 
 export async function updateProfesionalAction(
   id: string,
-  values: ProfesionalFormValues
+  values: ProfesionalFormValues,
+  avatarUrl?: string | null
 ): Promise<ProfesionalActionState> {
   const parsed = profesionalSchema.safeParse(values)
 
@@ -355,7 +407,7 @@ export async function updateProfesionalAction(
 
   const { data: membership, error: membershipError } = await supabase
     .from('miembros_centro')
-    .select('id,profile_id')
+    .select('id,profile_id,avatar_url,profiles!inner(avatar_url)')
     .eq('id', id)
     .eq('centro_id', centroId)
     .maybeSingle()
@@ -367,6 +419,8 @@ export async function updateProfesionalAction(
   if (!membership?.profile_id) {
     return { ok: false, message: 'No pudimos identificar al profesional.' }
   }
+
+  const normalizedAvatarUrl = normalizePublicImageUrl(avatarUrl)
 
   const { error: duplicateEmailError, data: duplicateEmail } = await supabase
     .from('profiles')
@@ -388,23 +442,29 @@ export async function updateProfesionalAction(
 
   const { error: profileError } = await supabase
     .from('profiles')
-    .update(formatProfilePayload(parsed.data))
+    .update(formatProfilePayload(parsed.data, normalizedAvatarUrl))
     .eq('id', membership.profile_id)
 
   if (profileError) {
     return { ok: false, message: supabaseError(profileError.message) }
   }
 
+  const membershipPayload: MembershipUpdatePayload = {
+    activo: parsed.data.activo,
+    especialidad: parsed.data.especialidad?.trim() || null,
+    descanso_entre_reservas_minutos:
+      parsed.data.descanso_entre_reservas_minutos,
+    duracion_sesion_minutos: parsed.data.duracion_sesion_minutos,
+    intervalo_reservas_minutos: parsed.data.intervalo_reservas_minutos,
+  }
+
+  if (normalizedAvatarUrl !== undefined) {
+    membershipPayload.avatar_url = normalizedAvatarUrl
+  }
+
   const { error: membershipUpdateError } = await supabase
     .from('miembros_centro')
-    .update({
-      activo: parsed.data.activo,
-      especialidad: parsed.data.especialidad?.trim() || null,
-      descanso_entre_reservas_minutos:
-        parsed.data.descanso_entre_reservas_minutos,
-      duracion_sesion_minutos: parsed.data.duracion_sesion_minutos,
-      intervalo_reservas_minutos: parsed.data.intervalo_reservas_minutos,
-    })
+    .update(membershipPayload)
     .eq('id', id)
     .eq('centro_id', centroId)
 
@@ -434,6 +494,23 @@ export async function updateProfesionalAction(
 
   if (fetchError || !profesional) {
     return { ok: false, message: fetchError ?? 'No pudimos actualizar la vista.' }
+  }
+
+  if (normalizedAvatarUrl !== undefined) {
+    const previousUrls = new Set(
+      [
+        membership.avatar_url,
+        Array.isArray(membership.profiles)
+          ? membership.profiles[0]?.avatar_url
+          : membership.profiles?.avatar_url,
+      ].filter((url): url is string => Boolean(url && url !== normalizedAvatarUrl))
+    )
+
+    await Promise.all(
+      [...previousUrls].map((url) =>
+        removeStoredProfessionalImage(supabase, url).catch(() => null)
+      )
+    )
   }
 
   await revalidateProfesionalPaths(supabase, centroId)

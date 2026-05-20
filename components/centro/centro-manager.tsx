@@ -27,8 +27,10 @@ import {
 } from '@/app/actions/centro'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EntityImage } from '@/components/ui/entity-image'
 import { FeedbackBanner, type FeedbackMessage } from '@/components/ui/feedback-banner'
 import { Field } from '@/components/ui/field'
+import { ImageUploadField } from '@/components/ui/image-upload-field'
 import { MetricStrip } from '@/components/ui/metric-strip'
 import { PageHeader } from '@/components/ui/page-header'
 import {
@@ -36,7 +38,6 @@ import {
   diasSemana,
   horarioDescansoDurationMinutes,
   horarioDurationMinutes,
-  horariosCentroStorageKey,
   normalizeHorarios,
   weeklyAvailabilityMinutes,
 } from '@/lib/centro/horarios'
@@ -54,6 +55,22 @@ import {
   type HorariosCentroFormValues,
   type RecordatoriosCentroFormValues,
 } from '@/lib/centro/validation'
+import {
+  readDemoStorageItem,
+  removeDemoStorageItem,
+  writeDemoStorageItem,
+} from '@/lib/demo-storage'
+import {
+  CENTER_LOGOS_BUCKET,
+  buildProfileImageStoragePath,
+} from '@/lib/images/config'
+import {
+  readImageAsDataUrl,
+  removeUploadedPublicImage,
+  uploadPublicImage,
+  type UploadedPublicImage,
+} from '@/lib/images/client'
+import type { PlanId } from '@/lib/plans'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 type CentroManagerProps = {
@@ -62,14 +79,18 @@ type CentroManagerProps = {
   initialRecordatorios: RecordatoriosConfig
   rol: RolCentro
   demoMode: boolean
+  demoPlanId?: PlanId
   loadError?: string
 }
 
-const centroStorageKey = 'agendix-demo-centro'
-const recordatoriosStorageKey = 'agendix-demo-recordatorios'
-
 function nowIso() {
   return new Date().toISOString()
+}
+
+function revokePreviewUrl(url: string | null) {
+  if (url?.startsWith('blob:')) {
+    URL.revokeObjectURL(url)
+  }
 }
 
 function centroFormValues(centro: CentroConfig): CentroFormValues {
@@ -139,6 +160,7 @@ export function CentroManager({
   initialRecordatorios,
   rol,
   demoMode,
+  demoPlanId,
   loadError,
 }: CentroManagerProps) {
   const router = useRouter()
@@ -148,9 +170,14 @@ export function CentroManager({
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(
     loadError ? { type: 'error', message: loadError } : null
   )
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
+  const [logoMarkedForRemoval, setLogoMarkedForRemoval] = useState(false)
+  const [logoUploadPending, setLogoUploadPending] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   const canEditCentro = demoMode || rol === 'owner' || rol === 'admin'
+  const isSavingCentro = isPending || logoUploadPending
   const score = completionScore(centro)
   const activeDays = activeDaysLabel(horarios)
   const weeklyHours = weeklyHoursLabel(horarios)
@@ -173,6 +200,11 @@ export function CentroManager({
       control: horariosForm.control,
       name: 'horarios',
     }) ?? horarios
+  const watchedCentroName =
+    useWatch({
+      control: centroForm.control,
+      name: 'nombre',
+    }) ?? centro.nombre
   const watchedRecordatorios =
     useWatch({
       control: recordatoriosForm.control,
@@ -201,30 +233,35 @@ export function CentroManager({
   useEffect(() => {
     if (!demoMode) return
 
-    migrateLegacyAgendixStorage()
+    migrateLegacyAgendixStorage(demoPlanId)
 
     let storedCentro: CentroConfig | null = null
     let storedHorarios: HorarioCentro[] | null = null
     let storedRecordatorios: RecordatoriosConfig | null = null
 
     try {
-      const storedCentroValue = window.localStorage.getItem(centroStorageKey)
+      const storedCentroValue = readDemoStorageItem(demoPlanId, 'centro')
       if (storedCentroValue) storedCentro = JSON.parse(storedCentroValue) as CentroConfig
 
-      const storedHorariosValue = window.localStorage.getItem(horariosCentroStorageKey)
+      const storedHorariosValue = readDemoStorageItem(
+        demoPlanId,
+        'horarios-centro'
+      )
       if (storedHorariosValue) {
         storedHorarios = normalizeHorarios(JSON.parse(storedHorariosValue) as HorarioCentro[])
       }
 
-      const storedRecordatoriosValue =
-        window.localStorage.getItem(recordatoriosStorageKey)
+      const storedRecordatoriosValue = readDemoStorageItem(
+        demoPlanId,
+        'recordatorios'
+      )
       if (storedRecordatoriosValue) {
         storedRecordatorios = JSON.parse(storedRecordatoriosValue) as RecordatoriosConfig
       }
     } catch {
-      window.localStorage.removeItem(centroStorageKey)
-      window.localStorage.removeItem(horariosCentroStorageKey)
-      window.localStorage.removeItem(recordatoriosStorageKey)
+      removeDemoStorageItem(demoPlanId, 'centro')
+      removeDemoStorageItem(demoPlanId, 'horarios-centro')
+      removeDemoStorageItem(demoPlanId, 'recordatorios')
     }
 
     const nextCentro = storedCentro ?? initialCentro
@@ -242,6 +279,7 @@ export function CentroManager({
   }, [
     centroForm,
     demoMode,
+    demoPlanId,
     horariosForm,
     initialCentro,
     initialHorarios,
@@ -249,7 +287,69 @@ export function CentroManager({
     recordatoriosForm,
   ])
 
-  const saveDemoCentro = (values: CentroFormValues) => {
+  useEffect(() => () => revokePreviewUrl(logoPreviewUrl), [logoPreviewUrl])
+
+  const resetLogoDraft = () => {
+    setLogoPreviewUrl((current) => {
+      revokePreviewUrl(current)
+      return null
+    })
+    setLogoFile(null)
+    setLogoMarkedForRemoval(false)
+  }
+
+  const selectLogoFile = (file: File) => {
+    setLogoPreviewUrl((current) => {
+      revokePreviewUrl(current)
+      return URL.createObjectURL(file)
+    })
+    setLogoFile(file)
+    setLogoMarkedForRemoval(false)
+  }
+
+  const removeLogo = () => {
+    setLogoPreviewUrl((current) => {
+      revokePreviewUrl(current)
+      return null
+    })
+    setLogoFile(null)
+    setLogoMarkedForRemoval(true)
+  }
+
+  const resolveLogoUpdate = async (): Promise<{
+    logoUrl?: string | null
+    uploadedImage?: UploadedPublicImage
+  }> => {
+    if (logoFile && demoMode) {
+      return { logoUrl: await readImageAsDataUrl(logoFile) }
+    }
+
+    if (logoFile) {
+      const uploadedImage = await uploadPublicImage({
+        bucket: CENTER_LOGOS_BUCKET,
+        path: buildProfileImageStoragePath({
+          centroId: centro.id,
+          entityId: centro.id,
+          file: logoFile,
+          folder: 'centers',
+        }),
+        file: logoFile,
+      })
+
+      return { logoUrl: uploadedImage.publicUrl, uploadedImage }
+    }
+
+    if (logoMarkedForRemoval) {
+      return { logoUrl: null }
+    }
+
+    return { logoUrl: undefined }
+  }
+
+  const saveDemoCentro = (
+    values: CentroFormValues,
+    logoUrl?: string | null
+  ) => {
     const updatedCentro: CentroConfig = {
       ...centro,
       nombre: values.nombre.trim(),
@@ -257,21 +357,17 @@ export function CentroManager({
       direccion: values.direccion?.trim() || null,
       telefono: values.telefono?.trim() || null,
       email: values.email?.trim().toLowerCase() || null,
+      logo_url: logoUrl === undefined ? centro.logo_url : logoUrl,
       updated_at: nowIso(),
     }
 
     setCentro(updatedCentro)
-    window.localStorage.setItem(centroStorageKey, JSON.stringify(updatedCentro))
+    writeDemoStorageItem(demoPlanId, 'centro', JSON.stringify(updatedCentro))
     setFeedback({ type: 'success', message: 'Centro actualizado en modo demo.' })
   }
 
   const onCentroSubmit = centroForm.handleSubmit((values) => {
     setFeedback(null)
-
-    if (demoMode) {
-      saveDemoCentro(values)
-      return
-    }
 
     if (!canEditCentro) {
       setFeedback({
@@ -282,20 +378,51 @@ export function CentroManager({
     }
 
     startTransition(async () => {
-      const result = await updateCentroAction(values)
+      let uploadedImage: UploadedPublicImage | undefined
 
-      if (!result.ok) {
-        setFeedback({ type: 'error', message: result.message })
-        return
+      try {
+        setLogoUploadPending(true)
+        const logoUpdate = await resolveLogoUpdate()
+        uploadedImage = logoUpdate.uploadedImage
+
+        if (demoMode) {
+          saveDemoCentro(values, logoUpdate.logoUrl)
+          resetLogoDraft()
+          return
+        }
+
+        const result = await updateCentroAction(values, logoUpdate.logoUrl)
+
+        if (!result.ok) {
+          if (uploadedImage) {
+            await removeUploadedPublicImage(uploadedImage).catch(() => null)
+          }
+          setFeedback({ type: 'error', message: result.message })
+          return
+        }
+
+        if (result.centro) {
+          setCentro(result.centro)
+          centroForm.reset(centroFormValues(result.centro))
+          resetLogoDraft()
+        }
+
+        setFeedback({ type: 'success', message: result.message })
+        router.refresh()
+      } catch (error) {
+        if (uploadedImage) {
+          await removeUploadedPublicImage(uploadedImage).catch(() => null)
+        }
+        setFeedback({
+          type: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'No pudimos guardar la imagen del centro.',
+        })
+      } finally {
+        setLogoUploadPending(false)
       }
-
-      if (result.centro) {
-        setCentro(result.centro)
-        centroForm.reset(centroFormValues(result.centro))
-      }
-
-      setFeedback({ type: 'success', message: result.message })
-      router.refresh()
     })
   })
 
@@ -305,7 +432,11 @@ export function CentroManager({
     if (demoMode) {
       const normalizedHorarios = normalizeHorarios(values.horarios)
       setHorarios(normalizedHorarios)
-      window.localStorage.setItem(horariosCentroStorageKey, JSON.stringify(normalizedHorarios))
+      writeDemoStorageItem(
+        demoPlanId,
+        'horarios-centro',
+        JSON.stringify(normalizedHorarios)
+      )
       setFeedback({ type: 'success', message: 'Horario operativo actualizado en modo demo.' })
       return
     }
@@ -339,8 +470,9 @@ export function CentroManager({
       }
 
       setRecordatorios(updatedRecordatorios)
-      window.localStorage.setItem(
-        recordatoriosStorageKey,
+      writeDemoStorageItem(
+        demoPlanId,
+        'recordatorios',
         JSON.stringify(updatedRecordatorios)
       )
       setFeedback({
@@ -383,7 +515,11 @@ export function CentroManager({
     if (demoMode) {
       setHorarios(normalizedDefault)
       horariosForm.reset({ horarios: normalizedDefault })
-      window.localStorage.setItem(horariosCentroStorageKey, JSON.stringify(normalizedDefault))
+      writeDemoStorageItem(
+        demoPlanId,
+        'horarios-centro',
+        JSON.stringify(normalizedDefault)
+      )
       setFeedback({ type: 'success', message: 'Horario operativo restablecido.' })
       return
     }
@@ -426,9 +562,13 @@ export function CentroManager({
           <RotateCcw size={16} aria-hidden="true" />
           Restablecer horario
         </Button>
-        <Button type="submit" form="centro-form" disabled={isPending || !canEditCentro}>
+        <Button type="submit" form="centro-form" disabled={isSavingCentro || !canEditCentro}>
           <Save size={16} aria-hidden="true" />
-          {isPending ? 'Guardando...' : 'Guardar centro'}
+          {isSavingCentro
+            ? logoUploadPending
+              ? 'Subiendo imagen...'
+              : 'Guardando...'
+            : 'Guardar centro'}
         </Button>
       </PageHeader>
 
@@ -492,6 +632,21 @@ export function CentroManager({
             className="space-y-5 p-5"
             noValidate
           >
+            <ImageUploadField
+              label="Logo o imagen institucional"
+              description="Aparece en la plataforma interna y en el portal público de reservas."
+              entityName={watchedCentroName || centro.nombre}
+              imageUrl={centro.logo_url}
+              previewUrl={logoPreviewUrl}
+              markedForRemoval={logoMarkedForRemoval}
+              variant="logo"
+              disabled={!canEditCentro || isSavingCentro}
+              uploading={logoUploadPending}
+              onFileSelect={selectLogoFile}
+              onRemove={removeLogo}
+              onRestore={resetLogoDraft}
+            />
+
             <Field label="Nombre del centro" error={centroForm.formState.errors.nombre?.message}>
               <input
                 type="text"
@@ -573,9 +728,12 @@ export function CentroManager({
 
         <section className="rounded-2xl border border-orange-100/80 bg-orange-50/30 p-4 shadow-sm shadow-slate-900/[0.025] sm:p-5">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-orange-500 ring-1 ring-orange-200/60">
-              <MapPin size={18} aria-hidden="true" />
-            </span>
+            <EntityImage
+              src={centro.logo_url}
+              name={centro.nombre}
+              variant="logo"
+              size="md"
+            />
             <div>
               <h2 className="text-sm font-medium text-slate-800">Resumen operativo</h2>
               <p className="mt-1 text-sm text-slate-500">

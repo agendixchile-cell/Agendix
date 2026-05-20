@@ -5,7 +5,13 @@ export type MiembroCentroRow = Database['public']['Tables']['miembros_centro']['
 
 export type ProfesionalListItem = Pick<
   MiembroCentroRow,
-  'id' | 'profile_id' | 'rol' | 'activo' | 'created_at' | 'updated_at'
+  | 'id'
+  | 'profile_id'
+  | 'rol'
+  | 'avatar_url'
+  | 'activo'
+  | 'created_at'
+  | 'updated_at'
 > & {
   nombre: string
   apellido: string | null
@@ -25,6 +31,7 @@ export type ProfesionalQueryRow = Pick<
   | 'profile_id'
   | 'rol'
   | 'especialidad'
+  | 'avatar_url'
   | 'descanso_entre_reservas_minutos'
   | 'duracion_sesion_minutos'
   | 'intervalo_reservas_minutos'
@@ -33,7 +40,7 @@ export type ProfesionalQueryRow = Pick<
   | 'updated_at'
 > & {
   profiles:
-    | Pick<ProfileRow, 'nombre' | 'apellido' | 'email' | 'telefono'>
+    | Pick<ProfileRow, 'nombre' | 'apellido' | 'email' | 'telefono' | 'avatar_url'>
     | null
 }
 

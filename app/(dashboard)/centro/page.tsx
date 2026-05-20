@@ -3,9 +3,11 @@ import { CentroManager } from '@/components/centro/centro-manager'
 import { demoCentro, demoRecordatoriosConfig } from '@/lib/centro/demo'
 import { defaultHorariosCentro } from '@/lib/centro/horarios'
 import type { CentroConfig, CentroMembership } from '@/lib/centro/types'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import { createClient } from '@/lib/supabase/server'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
 import { getHorariosCentro, getRecordatoriosCentro } from '@/app/actions/centro'
+import { getDemoPlanId } from '@/lib/subscription/server'
 
 type MembershipQueryRow = {
   rol: CentroMembership['rol']
@@ -16,13 +18,17 @@ export default async function CentroPage() {
   const demoMode = isDemoMode()
 
   if (demoMode) {
+    const demoPlanId = await getDemoPlanId()
+    const dataset = getDemoPlanDataset(demoPlanId)
+
     return (
       <CentroManager
-        initialCentro={demoCentro}
-        initialHorarios={defaultHorariosCentro}
-        initialRecordatorios={demoRecordatoriosConfig}
+        initialCentro={dataset.centro}
+        initialHorarios={dataset.horarios}
+        initialRecordatorios={dataset.recordatorios}
         rol="admin"
         demoMode
+        demoPlanId={demoPlanId}
       />
     )
   }
