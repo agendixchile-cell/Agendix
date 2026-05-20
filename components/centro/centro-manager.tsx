@@ -34,6 +34,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import {
   defaultHorariosCentro,
   diasSemana,
+  horarioDescansoDurationMinutes,
   horarioDurationMinutes,
   horariosCentroStorageKey,
   normalizeHorarios,
@@ -87,6 +88,9 @@ function recordatoriosFormValues(
   return {
     email_enabled: recordatorios.email_enabled,
     whatsapp_enabled: recordatorios.whatsapp_enabled,
+    email_hours_before: recordatorios.email_hours_before ?? 24,
+    email_subject_template: recordatorios.email_subject_template,
+    email_body_template: recordatorios.email_body_template,
   }
 }
 
@@ -104,7 +108,11 @@ function completionScore(centro: CentroConfig) {
 }
 
 function weeklyHoursLabel(horarios: HorarioCentro[]) {
-  const hours = weeklyAvailabilityMinutes(horarios) / 60
+  return hoursFromMinutesLabel(weeklyAvailabilityMinutes(horarios))
+}
+
+function hoursFromMinutesLabel(minutes: number) {
+  const hours = minutes / 60
 
   return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} h`
 }
@@ -118,6 +126,7 @@ function activeDaysLabel(horarios: HorarioCentro[]) {
 }
 
 function roleLabel(rol: RolCentro) {
+  if (rol === 'owner') return 'Owner'
   if (rol === 'admin') return 'Administrador'
   if (rol === 'recepcion') return 'Recepción'
 
@@ -141,7 +150,7 @@ export function CentroManager({
   )
   const [isPending, startTransition] = useTransition()
 
-  const canEditCentro = demoMode || rol === 'admin'
+  const canEditCentro = demoMode || rol === 'owner' || rol === 'admin'
   const score = completionScore(centro)
   const activeDays = activeDaysLabel(horarios)
   const weeklyHours = weeklyHoursLabel(horarios)
@@ -168,6 +177,26 @@ export function CentroManager({
     useWatch({
       control: recordatoriosForm.control,
     }) ?? recordatoriosFormValues(recordatorios)
+  const watchedEmailReminderHours = Number(watchedRecordatorios.email_hours_before)
+  const emailReminderHours = Number.isFinite(watchedEmailReminderHours)
+    ? watchedEmailReminderHours
+    : 24
+
+  useEffect(() => {
+    if (demoMode) return
+
+    centroForm.reset(centroFormValues(initialCentro))
+    horariosForm.reset({ horarios: normalizeHorarios(initialHorarios) })
+    recordatoriosForm.reset(recordatoriosFormValues(initialRecordatorios))
+  }, [
+    centroForm,
+    demoMode,
+    horariosForm,
+    initialCentro,
+    initialHorarios,
+    initialRecordatorios,
+    recordatoriosForm,
+  ])
 
   useEffect(() => {
     if (!demoMode) return
@@ -198,23 +227,27 @@ export function CentroManager({
       window.localStorage.removeItem(recordatoriosStorageKey)
     }
 
+    const nextCentro = storedCentro ?? initialCentro
+    const nextHorarios = storedHorarios ?? normalizeHorarios(initialHorarios)
+    const nextRecordatorios = storedRecordatorios ?? initialRecordatorios
+
     window.setTimeout(() => {
-      if (storedCentro) {
-        setCentro(storedCentro)
-        centroForm.reset(centroFormValues(storedCentro))
-      }
-
-      if (storedHorarios) {
-        setHorarios(storedHorarios)
-        horariosForm.reset({ horarios: storedHorarios })
-      }
-
-      if (storedRecordatorios) {
-        setRecordatorios(storedRecordatorios)
-        recordatoriosForm.reset(recordatoriosFormValues(storedRecordatorios))
-      }
+      setCentro(nextCentro)
+      centroForm.reset(centroFormValues(nextCentro))
+      setHorarios(nextHorarios)
+      horariosForm.reset({ horarios: nextHorarios })
+      setRecordatorios(nextRecordatorios)
+      recordatoriosForm.reset(recordatoriosFormValues(nextRecordatorios))
     }, 0)
-  }, [centroForm, demoMode, horariosForm, recordatoriosForm])
+  }, [
+    centroForm,
+    demoMode,
+    horariosForm,
+    initialCentro,
+    initialHorarios,
+    initialRecordatorios,
+    recordatoriosForm,
+  ])
 
   const saveDemoCentro = (values: CentroFormValues) => {
     const updatedCentro: CentroConfig = {
@@ -299,6 +332,9 @@ export function CentroManager({
         ...recordatorios,
         email_enabled: values.email_enabled,
         whatsapp_enabled: values.whatsapp_enabled,
+        email_hours_before: values.email_hours_before,
+        email_subject_template: values.email_subject_template.trim(),
+        email_body_template: values.email_body_template.trim(),
         updated_at: nowIso(),
       }
 
@@ -568,7 +604,7 @@ export function CentroManager({
                 Recordatorios automáticos
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Agendix prepara email 48h antes y WhatsApp 24h antes de cada reserva.
+                Agendix prepara email con confirmación y mantiene WhatsApp como canal pendiente.
               </p>
             </div>
           </div>
@@ -590,7 +626,7 @@ export function CentroManager({
         >
           <ReminderToggle
             icon={Mail}
-            title="Email 48 horas antes"
+            title={`Email ${emailReminderHours} horas antes`}
             description="Envía un correo con el resumen de la reserva usando Resend."
             enabled={!!watchedRecordatorios.email_enabled}
             disabled={!canEditCentro}
@@ -599,17 +635,80 @@ export function CentroManager({
           <ReminderToggle
             icon={MessageCircle}
             title="WhatsApp 24 horas antes"
-            description="Listo para WhatsApp Business Cloud API; funciona en modo mock sin credenciales."
+            description="Canal preparado para cuando esté activa la integración de WhatsApp."
             enabled={!!watchedRecordatorios.whatsapp_enabled}
             disabled={!canEditCentro}
             inputProps={recordatoriosForm.register('whatsapp_enabled')}
           />
+
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 lg:col-span-2">
+            <Field
+              label="Anticipación del correo"
+              error={recordatoriosForm.formState.errors.email_hours_before?.message}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  step={1}
+                  className="agendix-input sm:max-w-40"
+                  disabled={!canEditCentro}
+                  aria-invalid={
+                    recordatoriosForm.formState.errors.email_hours_before
+                      ? 'true'
+                      : 'false'
+                  }
+                  {...recordatoriosForm.register('email_hours_before', {
+                    valueAsNumber: true,
+                  })}
+                />
+                <span className="text-sm font-medium text-slate-500">
+                  horas antes de la cita
+                </span>
+              </div>
+            </Field>
+          </div>
+
+          <div className="space-y-4 lg:col-span-2">
+            <Field
+              label="Asunto del correo"
+              error={recordatoriosForm.formState.errors.email_subject_template?.message}
+            >
+              <input
+                type="text"
+                className="agendix-input"
+                disabled={!canEditCentro}
+                aria-invalid={
+                  recordatoriosForm.formState.errors.email_subject_template
+                    ? 'true'
+                    : 'false'
+                }
+                {...recordatoriosForm.register('email_subject_template')}
+              />
+            </Field>
+
+            <Field
+              label="Mensaje del correo"
+              error={recordatoriosForm.formState.errors.email_body_template?.message}
+            >
+              <textarea
+                rows={7}
+                className="agendix-input min-h-40 resize-y leading-6"
+                disabled={!canEditCentro}
+                aria-invalid={
+                  recordatoriosForm.formState.errors.email_body_template
+                    ? 'true'
+                    : 'false'
+                }
+                {...recordatoriosForm.register('email_body_template')}
+              />
+            </Field>
+          </div>
         </form>
 
         <div className="border-t border-slate-200/80 bg-orange-50/30 px-5 py-3 text-sm text-slate-600">
-          Los recordatorios no se envían si la reserva está cancelada. WhatsApp queda en modo{' '}
-          <span className="font-semibold text-slate-800">{recordatorios.whatsapp_mode}</span>{' '}
-          hasta configurar credenciales reales.
+          Los mensajes no se envían si la reserva está cancelada o si la hora ya venció.
         </div>
       </section>
 
@@ -637,18 +736,21 @@ export function CentroManager({
         <form
           id="horarios-form"
           onSubmit={onHorariosSubmit}
-          className="grid gap-3 p-4 sm:p-5 lg:grid-cols-7"
+          className="grid gap-3 p-3 sm:p-4 lg:grid-cols-2 xl:grid-cols-4"
           noValidate
         >
           {diasSemana.map((dia, index) => {
             const watchedHorario = watchedHorarios[index] ?? defaultHorariosCentro[index]
             const activo = watchedHorario.activo
+            const descansoActivo = activo && Boolean(watchedHorario.descanso_activo)
             const duration = horarioDurationMinutes(watchedHorario)
+            const descansoDuration = horarioDescansoDurationMinutes(watchedHorario)
+            const horarioErrors = horariosForm.formState.errors.horarios?.[index]
 
             return (
               <article
                 key={dia.dia}
-                className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-3"
+                className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-3"
               >
                 <input
                   type="hidden"
@@ -666,43 +768,117 @@ export function CentroManager({
                       {dia.label}
                     </p>
                   </div>
-                  <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-orange-200 text-orange-600 focus:ring-orange-500"
+                      className="h-3.5 w-3.5 rounded border-orange-200 text-orange-600 focus:ring-orange-500"
                       {...horariosForm.register(`horarios.${index}.activo`)}
                     />
                     Activo
                   </label>
                 </div>
 
-                <div className="mt-4 space-y-3">
-                  <Field
-                    label="Apertura"
-                    error={horariosForm.formState.errors.horarios?.[index]?.inicio?.message}
-                  >
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">
+                      Apertura
+                    </span>
                     <input
                       type="time"
-                      className="agendix-input"
+                      className="agendix-time-input mt-1"
                       disabled={!activo}
                       {...horariosForm.register(`horarios.${index}.inicio`)}
                     />
-                  </Field>
-                  <Field
-                    label="Cierre"
-                    error={horariosForm.formState.errors.horarios?.[index]?.fin?.message}
-                  >
+                    {horarioErrors?.inicio?.message && (
+                      <span className="mt-1 block text-[11px] font-medium text-red-500">
+                        {horarioErrors.inicio.message}
+                      </span>
+                    )}
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">
+                      Cierre
+                    </span>
                     <input
                       type="time"
-                      className="agendix-input"
+                      className="agendix-time-input mt-1"
                       disabled={!activo}
                       {...horariosForm.register(`horarios.${index}.fin`)}
                     />
-                  </Field>
+                    {horarioErrors?.fin?.message && (
+                      <span className="mt-1 block text-[11px] font-medium text-red-500">
+                        {horarioErrors.fin.message}
+                      </span>
+                    )}
+                  </label>
                 </div>
 
-                <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-500 ring-1 ring-slate-200/60">
-                  {activo ? `${Math.round(duration / 60)} h disponibles` : 'Cerrado'}
+                <div
+                  className={`mt-3 rounded-xl border px-2.5 py-2 transition-colors ${
+                    descansoActivo
+                      ? 'border-orange-200 bg-orange-50/45'
+                      : 'border-slate-200/80 bg-white/85'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold text-slate-600">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 shrink-0 rounded border-orange-200 text-orange-600 focus:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!activo}
+                        {...horariosForm.register(`horarios.${index}.descanso_activo`)}
+                      />
+                      <span className="truncate">Descanso</span>
+                    </label>
+                    <span className="shrink-0 text-[11px] font-medium text-slate-400">
+                      Almuerzo
+                    </span>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        Inicio
+                      </span>
+                      <input
+                        type="time"
+                        className="agendix-time-input mt-1"
+                        disabled={!activo}
+                        {...horariosForm.register(`horarios.${index}.descanso_inicio`)}
+                      />
+                      {horarioErrors?.descanso_inicio?.message && (
+                        <span className="mt-1 block text-[11px] font-medium text-red-500">
+                          {horarioErrors.descanso_inicio.message}
+                        </span>
+                      )}
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        Fin
+                      </span>
+                      <input
+                        type="time"
+                        className="agendix-time-input mt-1"
+                        disabled={!activo}
+                        {...horariosForm.register(`horarios.${index}.descanso_fin`)}
+                      />
+                      {horarioErrors?.descanso_fin?.message && (
+                        <span className="mt-1 block text-[11px] font-medium text-red-500">
+                          {horarioErrors.descanso_fin.message}
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                <p className="mt-2 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-medium leading-4 text-slate-500 ring-1 ring-slate-200/60">
+                  {activo
+                    ? `${hoursFromMinutesLabel(duration)} disponibles${
+                        descansoDuration > 0
+                          ? `, ${hoursFromMinutesLabel(descansoDuration)} descanso`
+                          : ''
+                      }`
+                    : 'Cerrado'}
                 </p>
               </article>
             )

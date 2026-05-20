@@ -10,27 +10,27 @@ type AgendixBrandProps = {
 
 type AgendixWordmarkProps = {
   className?: string
-  priority?: boolean
+  preload?: boolean
 }
 
 export function AgendixWordmark({
   className,
-  priority = false,
+  preload = false,
 }: AgendixWordmarkProps) {
   return (
     <div
       className={cn(
-        'relative h-24 w-72 overflow-hidden bg-[#FCFBF9] sm:h-28 sm:w-80',
+        'relative h-20 w-72 overflow-hidden bg-transparent sm:h-24 sm:w-80',
         className
       )}
     >
       <Image
-        src="/agendix-login-logo.jpeg"
+        src="/agendix-wordmark.png"
         alt="Agendix"
         fill
-        priority={priority}
+        preload={preload}
         sizes="(min-width: 640px) 320px, 288px"
-        className="object-cover"
+        className="object-contain"
       />
     </div>
   )

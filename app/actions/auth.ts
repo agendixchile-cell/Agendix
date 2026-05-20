@@ -4,13 +4,18 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
+  emailSchema,
   loginSchema,
+  passwordResetRequestSchema,
   registerSchema,
+  updatePasswordSchema,
   type RegisterValues,
 } from '@/lib/auth/validation'
+import { getAuthCallbackUrl, getPasswordResetCallbackUrl } from '@/lib/urls'
 
 export type AuthState = {
   error?: string
+  success?: string
 } | undefined
 
 function generarSlug(nombre: string): string {
@@ -40,6 +45,36 @@ function esConflictoUnicoSlug(errorCode?: string): boolean {
   return errorCode === '23505'
 }
 
+type ProvisioningClient = NonNullable<ReturnType<typeof createAdminClient>>
+
+function logRegistroError(
+  step: string,
+  error: { message?: string; code?: string; status?: number | string } | null
+): void {
+  console.error('[registerAction]', step, {
+    code: error?.code,
+    status: error?.status,
+    message: error?.message,
+  })
+}
+
+async function limpiarRegistroIncompleto(
+  supabase: ProvisioningClient,
+  userId: string,
+  centroId: string | null
+): Promise<void> {
+  try {
+    if (centroId) {
+      await supabase.from('centros').delete().eq('id', centroId)
+    }
+
+    await supabase.from('profiles').delete().eq('id', userId)
+    await supabase.auth.admin.deleteUser(userId)
+  } catch (error) {
+    console.error('[registerAction] cleanup failed', error)
+  }
+}
+
 function errorSupabaseEnEspanol(
   errorMessage: string,
   fallback: string,
@@ -57,6 +92,13 @@ function errorSupabaseEnEspanol(
 
   if (message.includes('email not confirmed')) {
     return 'Debes confirmar tu email antes de continuar.'
+  }
+
+  if (
+    errorCode === 'over_email_send_rate_limit' ||
+    message.includes('email rate limit')
+  ) {
+    return 'Alcanzamos el límite de envío de emails de confirmación. Intenta más tarde o contacta soporte.'
   }
 
   if (message.includes('password')) {
@@ -107,18 +149,30 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
   }
 
   const { nombre, email, password, nombreCentro } = parsed.data
+  const normalizedEmail = email.trim().toLowerCase()
 
   const supabase = await createClient()
   const adminSupabase = createAdminClient()
-  const provisioningClient = adminSupabase ?? supabase
+
+  if (!adminSupabase) {
+    console.error('[registerAction] missing SUPABASE_SERVICE_ROLE_KEY')
+    return {
+      error:
+        'No pudimos crear la cuenta por configuración del servidor. Contacta soporte.',
+    }
+  }
 
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-    email,
+    email: normalizedEmail,
     password,
-    options: { data: { nombre } },
+    options: {
+      data: { nombre },
+      emailRedirectTo: getAuthCallbackUrl(),
+    },
   })
 
   if (signUpError) {
+    logRegistroError('auth signUp failed', signUpError)
     return {
       error: errorSupabaseEnEspanol(
         signUpError.message,
@@ -130,6 +184,7 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
 
   const userId = signUpData.user?.id
   if (!userId) {
+    logRegistroError('auth signUp returned no user id', null)
     return { error: 'No pudimos crear la cuenta. Intenta nuevamente.' }
   }
 
@@ -141,18 +196,21 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
   let centroId: string | null = null
   let ultimoErrorCentro: string | null = null
 
-  const { error: profileError } = await provisioningClient
+  const { error: profileError } = await adminSupabase
     .from('profiles')
     .upsert(
       {
         id: userId,
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         nombre: nombre.trim(),
       },
       { onConflict: 'id' }
     )
 
   if (profileError) {
+    logRegistroError('profile provisioning failed', profileError)
+    await limpiarRegistroIncompleto(adminSupabase, userId, centroId)
+
     return {
       error: errorSupabaseEnEspanol(
         profileError.message,
@@ -165,9 +223,9 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
   for (let intento = 0; intento < 50; intento++) {
     const slug = intento === 0 ? slugBase : `${slugBase}-${intento}`
 
-    const { data: centro, error: centroError } = await provisioningClient
+    const { data: centro, error: centroError } = await adminSupabase
       .from('centros')
-      .insert({ nombre: nombreCentro, slug })
+      .insert({ nombre: nombreCentro, slug, owner_user_id: userId })
       .select('id')
       .single()
 
@@ -181,6 +239,9 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
       continue
     }
 
+    logRegistroError('centro provisioning failed', centroError)
+    await limpiarRegistroIncompleto(adminSupabase, userId, centroId)
+
     return {
       error: errorSupabaseEnEspanol(
         centroError?.message ?? '',
@@ -191,6 +252,11 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
   }
 
   if (!centroId) {
+    logRegistroError('centro slug exhausted', {
+      message: ultimoErrorCentro ?? 'No available slug after 50 attempts',
+    })
+    await limpiarRegistroIncompleto(adminSupabase, userId, centroId)
+
     return {
       error: errorSupabaseEnEspanol(
         ultimoErrorCentro ?? '',
@@ -199,11 +265,14 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     }
   }
 
-  const { error: miembroError } = await provisioningClient
+  const { error: miembroError } = await adminSupabase
     .from('miembros_centro')
-    .insert({ centro_id: centroId, profile_id: userId, rol: 'admin' })
+    .insert({ centro_id: centroId, profile_id: userId, rol: 'owner' })
 
   if (miembroError) {
+    logRegistroError('membership provisioning failed', miembroError)
+    await limpiarRegistroIncompleto(adminSupabase, userId, centroId)
+
     return {
       error: errorSupabaseEnEspanol(
         miembroError.message,
@@ -213,7 +282,7 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     }
   }
 
-  await provisioningClient.from('salas').insert({
+  const { error: salaError } = await adminSupabase.from('salas').insert({
     centro_id: centroId,
     nombre: 'Consulta general',
     descripcion: 'Espacio base para agenda clínica',
@@ -221,7 +290,20 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     activa: true,
   })
 
-  await provisioningClient.from('servicios').insert({
+  if (salaError) {
+    logRegistroError('default room provisioning failed', salaError)
+    await limpiarRegistroIncompleto(adminSupabase, userId, centroId)
+
+    return {
+      error: errorSupabaseEnEspanol(
+        salaError.message,
+        'No pudimos preparar la sala inicial. Intenta nuevamente.',
+        salaError.code
+      ),
+    }
+  }
+
+  const { error: servicioError } = await adminSupabase.from('servicios').insert({
     centro_id: centroId,
     nombre: 'Consulta',
     descripcion: 'Servicio base para comenzar a agendar',
@@ -230,27 +312,136 @@ export async function registerAction(values: RegisterValues): Promise<AuthState>
     activo: true,
   })
 
+  if (servicioError) {
+    logRegistroError('default service provisioning failed', servicioError)
+    await limpiarRegistroIncompleto(adminSupabase, userId, centroId)
+
+    return {
+      error: errorSupabaseEnEspanol(
+        servicioError.message,
+        'No pudimos preparar el servicio inicial. Intenta nuevamente.',
+        servicioError.code
+      ),
+    }
+  }
+
   if (!signUpData.session) {
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    return {
+      success:
+        'Cuenta creada. Revisa tu correo para confirmar el email y luego inicia sesión.',
+    }
+  }
 
-    if (signInError) {
-      if (signInError.message.toLowerCase().includes('email not confirmed')) {
-        return {
-          error:
-            'Cuenta creada. Revisa tu correo para confirmar el email y luego inicia sesión.',
-        }
-      }
+  redirect('/agenda')
+}
 
-      return {
-        error: errorSupabaseEnEspanol(
-          signInError.message,
-          'Tu cuenta fue creada, pero no pudimos iniciar sesión automáticamente.',
-          signInError.code
-        ),
-      }
+export async function resendConfirmationAction(email: string): Promise<AuthState> {
+  const parsed = emailSchema.safeParse(email)
+
+  if (!parsed.success) {
+    return { error: 'Ingresa un email válido para reenviar la confirmación.' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: parsed.data.trim().toLowerCase(),
+    options: {
+      emailRedirectTo: getAuthCallbackUrl(),
+    },
+  })
+
+  if (error) {
+    logRegistroError('resend confirmation failed', error)
+    return {
+      error: errorSupabaseEnEspanol(
+        error.message,
+        'No pudimos reenviar el correo de confirmación. Intenta nuevamente.',
+        error.code
+      ),
+    }
+  }
+
+  return {
+    success:
+      'Te enviamos un nuevo correo de confirmación. Revisa también spam o promociones.',
+  }
+}
+
+export async function requestPasswordResetAction(
+  _prevState: AuthState,
+  formData: FormData
+): Promise<AuthState> {
+  const parsed = passwordResetRequestSchema.safeParse({
+    email: formData.get('email'),
+  })
+
+  if (!parsed.success) {
+    return { error: 'Ingresa un email válido para recuperar tu contraseña.' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    parsed.data.email.trim().toLowerCase(),
+    {
+      redirectTo: getPasswordResetCallbackUrl(),
+    }
+  )
+
+  if (error) {
+    logRegistroError('password reset request failed', error)
+    return {
+      error: errorSupabaseEnEspanol(
+        error.message,
+        'No pudimos enviar el correo de recuperación. Intenta nuevamente.',
+        error.code
+      ),
+    }
+  }
+
+  return {
+    success:
+      'Te enviamos un enlace para crear una nueva contraseña. Revisa también spam o promociones.',
+  }
+}
+
+export async function updatePasswordAction(
+  _prevState: AuthState,
+  formData: FormData
+): Promise<AuthState> {
+  const parsed = updatePasswordSchema.safeParse({
+    password: formData.get('password'),
+    confirmarPassword: formData.get('confirmarPassword'),
+  })
+
+  if (!parsed.success) {
+    return { error: 'Revisa la nueva contraseña y su confirmación.' }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return {
+      error:
+        'El enlace de recuperación expiró o no abrió sesión. Solicita un nuevo correo.',
+    }
+  }
+
+  const { error } = await supabase.auth.updateUser({
+    password: parsed.data.password,
+  })
+
+  if (error) {
+    logRegistroError('password update failed', error)
+    return {
+      error: errorSupabaseEnEspanol(
+        error.message,
+        'No pudimos actualizar la contraseña. Solicita un nuevo enlace e intenta otra vez.',
+        error.code
+      ),
     }
   }
 

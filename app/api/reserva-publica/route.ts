@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { publicBookingRequestSchema } from '@/lib/booking/validation'
-import {
-  getHorarioForDate,
-  localDateTime,
-  timeToMinutes,
-} from '@/lib/booking/availability'
-import { defaultHorariosCentro, normalizeHorarios } from '@/lib/centro/horarios'
-import type { HorarioCentro } from '@/lib/centro/types'
+import { localDateTime } from '@/lib/booking/availability'
 import type { PublicBookingResult } from '@/lib/booking/types'
-import { buildReservationReminderRows } from '@/lib/reminders/schedule'
+import {
+  buildReservationReminderRows,
+  DEFAULT_EMAIL_REMINDER_HOURS_BEFORE,
+  DEFAULT_WHATSAPP_REMINDER_HOURS_BEFORE,
+  normalizeReminderHours,
+} from '@/lib/reminders/schedule'
+import { sendProfessionalBookingEmail } from '@/lib/reminders/email'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
+import { checkRateLimit } from '@/lib/rate-limit'
+import type { EstadoReserva } from '@/lib/types/database'
+
+export const runtime = 'nodejs'
 
 function splitNombreCompleto(nombreCompleto: string) {
   const parts = nombreCompleto.trim().split(/\s+/)
@@ -59,7 +62,68 @@ function buildPublicNotes({
     .join('\n')
 }
 
+function getPublicBookingInitialStatus(): EstadoReserva {
+  return 'pending'
+}
+
+function clientIp(request: Request) {
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  const realIp = request.headers.get('x-real-ip')
+
+  return forwardedFor?.split(',')[0]?.trim() || realIp?.trim() || 'unknown'
+}
+
+function fingerprint(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function rateLimitedResponse(retryAfterSeconds: number) {
+  return NextResponse.json(
+    {
+      message:
+        'Recibimos muchas solicitudes seguidas. Espera un momento e intenta nuevamente.',
+    },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfterSeconds),
+      },
+    }
+  )
+}
+
+function rpcStatus(code: string) {
+  if (
+    [
+      'conflicto_profesional',
+      'conflicto_sala',
+      'horario_bloqueado',
+      'sin_sala_disponible',
+      'fuera_de_intervalo',
+    ].includes(code)
+  ) {
+    return 409
+  }
+
+  return 400
+}
+
 export async function POST(request: Request) {
+  const supabase = createAdminClient()
+  const ipLimit = await checkRateLimit(
+    `booking:ip:${clientIp(request)}`,
+    {
+      limit: 12,
+      windowMs: 10 * 60_000,
+    },
+    Date.now(),
+    supabase
+  )
+
+  if (!ipLimit.allowed) {
+    return rateLimitedResponse(ipLimit.retryAfterSeconds)
+  }
+
   const body = await request.json().catch(() => null)
   const parsed = publicBookingRequestSchema.safeParse(body ?? {})
 
@@ -70,14 +134,35 @@ export async function POST(request: Request) {
     )
   }
 
-  const supabase = createAdminClient() ?? (await createClient())
   const values = parsed.data
+
+  if (!supabase) {
+    return NextResponse.json(
+      { message: 'No pudimos preparar la agenda del centro.' },
+      { status: 500 }
+    )
+  }
+
+  const fingerprintLimit = await checkRateLimit(
+    `booking:contact:${values.centro_id}:${fingerprint(values.email)}:${fingerprint(values.telefono)}`,
+    {
+      limit: 4,
+      windowMs: 30 * 60_000,
+    },
+    Date.now(),
+    supabase
+  )
+
+  if (!fingerprintLimit.allowed) {
+    return rateLimitedResponse(fingerprintLimit.retryAfterSeconds)
+  }
 
   const { data: centro, error: centroError } = await supabase
     .from('centros')
-    .select('id,slug')
+    .select('id,slug,nombre,email,telefono')
     .eq('id', values.centro_id)
     .eq('activo', true)
+    .eq('public_booking_enabled', true)
     .maybeSingle()
 
   if (centroError || !centro) {
@@ -93,6 +178,7 @@ export async function POST(request: Request) {
     .eq('id', values.servicio_id)
     .eq('centro_id', values.centro_id)
     .eq('activo', true)
+    .eq('public_visible', true)
     .maybeSingle()
 
   if (servicioError || !servicio) {
@@ -108,7 +194,8 @@ export async function POST(request: Request) {
     .eq('profile_id', values.profesional_id)
     .eq('centro_id', values.centro_id)
     .eq('activo', true)
-    .in('rol', ['admin', 'profesional'])
+    .eq('public_visible', true)
+    .in('rol', ['owner', 'admin', 'profesional'])
     .maybeSingle()
 
   if (profesionalError || !profesional) {
@@ -118,13 +205,19 @@ export async function POST(request: Request) {
     )
   }
 
-  const { fechaInicio, fechaFin, startsAt, error: dateError } = buildDateRange(
+  const { data: profesionalProfile } = await supabase
+    .from('profiles')
+    .select('id,nombre,apellido,email')
+    .eq('id', values.profesional_id)
+    .maybeSingle()
+
+  const { fechaInicio, startsAt, error: dateError } = buildDateRange(
     values.fecha,
     values.hora,
     servicio.duracion_minutos
   )
 
-  if (dateError || !fechaInicio || !fechaFin || !startsAt) {
+  if (dateError || !fechaInicio || !startsAt) {
     return NextResponse.json(
       { message: dateError ?? 'Selecciona una fecha y hora válidas.' },
       { status: 400 }
@@ -135,99 +228,6 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { message: 'Selecciona un horario futuro.' },
       { status: 400 }
-    )
-  }
-
-  const { data: horariosData } = await supabase
-    .from('horarios_centro')
-    .select('dia,activo,inicio,fin')
-    .eq('centro_id', values.centro_id)
-
-  const horarios =
-    horariosData && horariosData.length > 0
-      ? normalizeHorarios(horariosData as HorarioCentro[])
-      : normalizeHorarios(defaultHorariosCentro)
-  const horario = getHorarioForDate(localDateTime(values.fecha, '00:00'), horarios)
-  const startMinutes = timeToMinutes(values.hora)
-  const endMinutes = startMinutes + servicio.duracion_minutos
-
-  if (
-    !horario?.activo ||
-    startMinutes < timeToMinutes(horario.inicio) ||
-    endMinutes > timeToMinutes(horario.fin)
-  ) {
-    return NextResponse.json(
-      { message: 'Ese horario está fuera del horario de atención.' },
-      { status: 400 }
-    )
-  }
-
-  let { data: sala } = await supabase
-    .from('salas')
-    .select('id')
-    .eq('centro_id', values.centro_id)
-    .eq('activa', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (!sala) {
-    const { data: newSala, error: salaError } = await supabase
-      .from('salas')
-      .insert({
-        centro_id: values.centro_id,
-        nombre: 'Consulta general',
-        descripcion: 'Espacio base para reservas online',
-        capacidad: 1,
-        activa: true,
-      })
-      .select('id')
-      .single()
-
-    if (salaError || !newSala) {
-      return NextResponse.json(
-        { message: 'No pudimos preparar la agenda del centro.' },
-        { status: 500 }
-      )
-    }
-
-    sala = newSala
-  }
-
-  const { data: salaConflict, error: salaConflictError } = await supabase
-    .from('reservas')
-    .select('id')
-    .eq('centro_id', values.centro_id)
-    .eq('sala_id', sala.id)
-    .neq('estado', 'cancelada')
-    .lt('fecha_inicio', fechaFin)
-    .gt('fecha_fin', fechaInicio)
-    .limit(1)
-    .maybeSingle()
-
-  const { data: profesionalConflict, error: profesionalConflictError } =
-    await supabase
-      .from('reservas')
-      .select('id')
-      .eq('centro_id', values.centro_id)
-      .eq('profesional_id', values.profesional_id)
-      .neq('estado', 'cancelada')
-      .lt('fecha_inicio', fechaFin)
-      .gt('fecha_fin', fechaInicio)
-      .limit(1)
-      .maybeSingle()
-
-  if (salaConflictError || profesionalConflictError) {
-    return NextResponse.json(
-      { message: 'No pudimos validar disponibilidad.' },
-      { status: 500 }
-    )
-  }
-
-  if (salaConflict || profesionalConflict) {
-    return NextResponse.json(
-      { message: 'Ese horario ya no está disponible. Elige otra hora.' },
-      { status: 409 }
     )
   }
 
@@ -265,13 +265,20 @@ export async function POST(request: Request) {
         telefono: normalizedPhone,
         fecha_nacimiento: null,
         notas: null,
+        activo: true,
       })
       .select('id,nombre,apellido,email,telefono')
       .single()
 
     if (pacienteError || !newPaciente) {
+      const message = pacienteError?.message
+        ?.toLowerCase()
+        .includes('plan_active_patient_limit_exceeded')
+        ? 'El centro alcanzó el límite de pacientes activos de su plan.'
+        : 'No pudimos registrar tus datos de contacto.'
+
       return NextResponse.json(
-        { message: 'No pudimos registrar tus datos de contacto.' },
+        { message },
         { status: 500 }
       )
     }
@@ -279,33 +286,61 @@ export async function POST(request: Request) {
     paciente = newPaciente
   }
 
-  const { data: reserva, error: reservaError } = await supabase
-    .from('reservas')
-    .insert({
-      centro_id: values.centro_id,
-      sala_id: sala.id,
-      profesional_id: values.profesional_id,
-      paciente_id: paciente.id,
-      servicio_id: values.servicio_id,
-      fecha_inicio: fechaInicio,
-      fecha_fin: fechaFin,
-      estado: 'pendiente',
-      estado_asistencia: 'sin_marcar',
-      notas: buildPublicNotes({
+  const paymentAmount =
+    typeof servicio.precio === 'number' && servicio.precio > 0
+      ? servicio.precio
+      : null
+  const isOnlinePayment = values.payment_method === 'online'
+  const paymentStatus =
+    paymentAmount == null ? 'not_required' : isOnlinePayment ? 'paid' : 'pending'
+  const { data: reservaResult, error: reservaError } = await supabase
+    .rpc('create_reserva_atomic', {
+      p_centro_id: values.centro_id,
+      p_profesional_id: values.profesional_id,
+      p_paciente_id: paciente.id,
+      p_servicio_id: values.servicio_id,
+      p_fecha_inicio: fechaInicio,
+      p_sala_id: null,
+      p_estado: getPublicBookingInitialStatus(),
+      p_notas: buildPublicNotes({
         motivo: values.motivo,
         documento: values.documento,
         paymentMethod: values.payment_method,
       }),
+      p_origen: 'portal_publico',
+      p_modalidad: 'presencial',
+      p_payment_status: paymentStatus,
+      p_amount: paymentAmount,
+      p_currency: 'CLP',
     })
-    .select('id')
     .single()
 
-  if (reservaError || !reserva) {
+  if (reservaError || !reservaResult) {
     return NextResponse.json(
       { message: 'No pudimos crear la reserva. Intenta nuevamente.' },
       { status: 500 }
     )
   }
+
+  if (!reservaResult.ok || !reservaResult.reserva_id || !reservaResult.fecha_fin) {
+    return NextResponse.json(
+      {
+        message:
+          reservaResult.message ??
+          'Ese horario ya no está disponible. Elige otra hora.',
+      },
+      { status: rpcStatus(reservaResult.code) }
+    )
+  }
+
+  const reserva = { id: reservaResult.reserva_id }
+  const reservaFechaFin = reservaResult.fecha_fin
+
+  const { data: reminderConfig } = await supabase
+    .from('configuracion_recordatorios')
+    .select('email_hours_before,whatsapp_hours_before')
+    .eq('centro_id', values.centro_id)
+    .maybeSingle()
 
   await supabase.from('recordatorios_reserva').upsert(
     buildReservationReminderRows({
@@ -313,15 +348,17 @@ export async function POST(request: Request) {
       reservaId: reserva.id,
       pacienteId: paciente.id,
       fechaInicio,
+      emailHoursBefore: normalizeReminderHours(
+        reminderConfig?.email_hours_before,
+        DEFAULT_EMAIL_REMINDER_HOURS_BEFORE
+      ),
+      whatsappHoursBefore: normalizeReminderHours(
+        reminderConfig?.whatsapp_hours_before,
+        DEFAULT_WHATSAPP_REMINDER_HOURS_BEFORE
+      ),
     }),
     { onConflict: 'reserva_id,canal,tipo' }
   )
-
-  const paymentAmount =
-    typeof servicio.precio === 'number' && servicio.precio > 0
-      ? servicio.precio
-      : null
-  const isOnlinePayment = values.payment_method === 'online'
 
   if (paymentAmount != null) {
     await supabase.from('pagos').insert({
@@ -333,6 +370,40 @@ export async function POST(request: Request) {
     })
   }
 
+  const professionalNotification = await sendProfessionalBookingEmail(
+    {
+      reserva_id: reserva.id,
+      centro_id: values.centro_id,
+      centro_nombre: centro.nombre,
+      centro_email: centro.email,
+      centro_telefono: centro.telefono,
+      servicio_nombre: servicio.nombre,
+      fecha_inicio: fechaInicio,
+      fecha_fin: reservaFechaFin,
+      profesional_nombre:
+        [profesionalProfile?.nombre, profesionalProfile?.apellido]
+          .filter(Boolean)
+          .join(' ') || 'Profesional',
+      profesional_email: profesionalProfile?.email ?? null,
+      paciente_nombre: paciente.nombre,
+      paciente_apellido: paciente.apellido,
+      paciente_email: paciente.email,
+      paciente_telefono: paciente.telefono,
+      motivo: values.motivo?.trim() || null,
+      payment_status: paymentStatus,
+    },
+    { idempotencyKey: `agendix-professional-booking-${reserva.id}` }
+  )
+
+  if (!professionalNotification.ok) {
+    console.error('[reserva-publica] professional email failed', {
+      reservaId: reserva.id,
+      centroId: values.centro_id,
+      error: professionalNotification.error,
+      recipient: professionalNotification.recipient,
+    })
+  }
+
   revalidatePath('/agenda')
   revalidatePath('/reservas')
   revalidatePath(`/agendar/${centro.slug}`)
@@ -340,8 +411,7 @@ export async function POST(request: Request) {
   const response: PublicBookingResult = {
     ok: true,
     reserva_id: reserva.id,
-    payment_status:
-      paymentAmount == null ? 'not_required' : isOnlinePayment ? 'paid' : 'pending',
+    payment_status: paymentStatus,
   }
 
   return NextResponse.json(response)

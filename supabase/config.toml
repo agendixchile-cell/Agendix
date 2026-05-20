@@ -1,0 +1,28 @@
+project_id = "sbebrhlcxwmzixpzvhuq"
+
+[auth]
+site_url = "https://app.agendixchile.cl"
+additional_redirect_urls = [
+  "https://app.agendixchile.cl/auth/callback",
+  "https://app.agendixchile.cl/**",
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3000/**",
+]
+
+[auth.rate_limit]
+email_sent = 30
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+[auth.email.smtp]
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "no-reply@agendixchile.cl"
+sender_name = "Agendix"
+
+[functions.send-booking-reminders]
+verify_jwt = false

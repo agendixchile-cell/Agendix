@@ -19,6 +19,9 @@ export type ReservaProfesionalOption = {
   id: string
   nombre: string
   email: string
+  descanso_entre_reservas_minutos?: number
+  duracion_sesion_minutos?: number
+  intervalo_reservas_minutos?: number
 }
 
 export type ReservaPacienteOption = {
@@ -29,6 +32,8 @@ export type ReservaPacienteOption = {
   telefono: string | null
 }
 
+export type AgendaBlockScope = 'centro' | 'profesional'
+
 export type ReservaListItem = Pick<
   ReservaRow,
   | 'id'
@@ -37,6 +42,9 @@ export type ReservaListItem = Pick<
   | 'estado'
   | 'estado_asistencia'
   | 'notas'
+  | 'meeting_provider'
+  | 'meeting_url'
+  | 'auto_generated_meeting'
   | 'created_at'
   | 'updated_at'
 > & {
@@ -54,6 +62,9 @@ export type ReservaQueryRow = Pick<
   | 'estado'
   | 'estado_asistencia'
   | 'notas'
+  | 'meeting_provider'
+  | 'meeting_url'
+  | 'auto_generated_meeting'
   | 'created_at'
   | 'updated_at'
 > & {
@@ -77,6 +88,38 @@ export type ReservaQueryRow = Pick<
     | null
 }
 
+export type AgendaBlockRow = Database['public']['Tables']['bloqueos_agenda']['Row']
+
+export type AgendaBlockListItem = Pick<
+  AgendaBlockRow,
+  | 'id'
+  | 'centro_id'
+  | 'profesional_id'
+  | 'fecha_inicio'
+  | 'fecha_fin'
+  | 'motivo'
+  | 'created_at'
+  | 'updated_at'
+> & {
+  profesional: ReservaProfesionalOption | null
+}
+
+export type AgendaBlockQueryRow = Pick<
+  AgendaBlockRow,
+  | 'id'
+  | 'centro_id'
+  | 'profesional_id'
+  | 'fecha_inicio'
+  | 'fecha_fin'
+  | 'motivo'
+  | 'created_at'
+  | 'updated_at'
+> & {
+  profiles:
+    | Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'nombre' | 'email'>
+    | null
+}
+
 export type ReservaActionState =
   | {
       ok: true
@@ -89,20 +132,43 @@ export type ReservaActionState =
       message: string
     }
 
+export type AgendaBlockActionState =
+  | {
+      ok: true
+      message: string
+      bloqueo?: AgendaBlockListItem
+      deletedId?: string
+    }
+  | {
+      ok: false
+      message: string
+    }
+
 export const reservaEstadoLabels: Record<EstadoReserva, string> = {
-  pendiente: 'Pendiente',
-  confirmada: 'Confirmada',
-  cancelada: 'Cancelada',
-  completada: 'Completada',
-  reagendada: 'Reagendada',
+  pending: 'Pendiente',
+  confirmed: 'Confirmada',
+  completed: 'Completada',
+  cancelled: 'Cancelada',
+  no_show: 'No asistió',
+}
+
+export const reservaEstadoDescriptions: Record<EstadoReserva, string> = {
+  pending:
+    'Reserva creada, pero aún no confirmada por el paciente. Puede haberse generado desde la agenda del profesional o desde una solicitud de reserva.',
+  confirmed:
+    'El paciente confirmó su asistencia o la reserva fue aceptada automáticamente según el flujo configurado.',
+  completed:
+    'La atención ya fue realizada. Úsala para marcar una sesión efectivamente atendida.',
+  cancelled: 'La reserva fue anulada por el paciente o por el profesional.',
+  no_show: 'El paciente no se presentó a la sesión agendada.',
 }
 
 export const reservaEstados: EstadoReserva[] = [
-  'pendiente',
-  'confirmada',
-  'cancelada',
-  'completada',
-  'reagendada',
+  'pending',
+  'confirmed',
+  'completed',
+  'cancelled',
+  'no_show',
 ]
 
 export const asistenciaLabels: Record<EstadoAsistencia, string> = {

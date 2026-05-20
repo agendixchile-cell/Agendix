@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { AgendixBrand, AgendixSymbol } from '@/components/brand/agendix-brand'
+import { AgendixSymbol, AgendixWordmark } from '@/components/brand/agendix-brand'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './sidebar'
 
@@ -40,25 +40,23 @@ export function DesktopSidebar({
   return (
     <aside
       className={cn(
-        'sticky top-0 hidden h-screen flex-shrink-0 border-r border-slate-200/80 bg-white/95 transition-[width] duration-200 md:flex md:flex-col',
+        'sticky top-0 hidden h-screen flex-shrink-0 border-r border-slate-200/80 bg-[#FCFBF9] transition-[width] duration-200 md:flex md:flex-col',
         collapsed ? 'w-[76px]' : 'w-72'
       )}
     >
       <div className={cn('pb-4 pt-5', collapsed ? 'px-3' : 'px-4')}>
         <div
           className={cn(
-              'relative rounded-2xl',
+              'rounded-2xl',
               collapsed
                 ? 'flex flex-col items-center gap-3 p-2'
-                : 'p-2'
+                : 'flex items-center justify-between gap-2 py-1.5 pl-1 pr-0'
           )}
         >
           {collapsed ? (
             <AgendixSymbol size="sm" />
           ) : (
-            <AgendixBrand
-              subtitle="Agenda y operación clínica"
-            />
+            <AgendixWordmark preload className="h-14 w-52 sm:h-14 sm:w-52" />
           )}
           <button
             type="button"
@@ -67,8 +65,8 @@ export function DesktopSidebar({
             aria-pressed={collapsed}
             title={collapsed ? 'Expandir barra lateral' : 'Contraer barra lateral'}
             className={cn(
-              'inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60',
-              collapsed ? 'bg-slate-50' : 'absolute right-0 top-1.5'
+              'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60',
+              collapsed && 'bg-slate-50'
             )}
           >
             {collapsed ? (

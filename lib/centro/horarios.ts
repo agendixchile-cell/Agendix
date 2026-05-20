@@ -21,6 +21,9 @@ export const defaultHorariosCentro: HorarioCentro[] = diasSemana.map(({ dia }) =
   activo: dia <= 6,
   inicio: '09:00',
   fin: '19:00',
+  descanso_activo: false,
+  descanso_inicio: '13:00',
+  descanso_fin: '14:00',
 }))
 
 export function timeToMinutes(time: string) {
@@ -40,10 +43,34 @@ export function timeToMinutes(time: string) {
   return hours * 60 + minutes
 }
 
+function pad(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+export function minutesToTime(minutes: number) {
+  const safeMinutes = Math.max(0, Math.min(23 * 60 + 59, minutes))
+
+  return `${pad(Math.floor(safeMinutes / 60))}:${pad(safeMinutes % 60)}`
+}
+
 export function horarioDurationMinutes(horario: HorarioCentro) {
   if (!horario.activo) return 0
 
-  return Math.max(0, timeToMinutes(horario.fin) - timeToMinutes(horario.inicio))
+  const openMinutes = Math.max(
+    0,
+    timeToMinutes(horario.fin) - timeToMinutes(horario.inicio)
+  )
+
+  return Math.max(0, openMinutes - horarioDescansoDurationMinutes(horario))
+}
+
+export function horarioDescansoDurationMinutes(horario: HorarioCentro) {
+  if (!horario.activo || !horario.descanso_activo) return 0
+
+  return Math.max(
+    0,
+    timeToMinutes(horario.descanso_fin) - timeToMinutes(horario.descanso_inicio)
+  )
 }
 
 export function normalizeHorarios(horarios: HorarioCentro[]) {
@@ -56,6 +83,11 @@ export function normalizeHorarios(horarios: HorarioCentro[]) {
       activo: horario?.activo ?? fallback?.activo ?? false,
       inicio: horario?.inicio ?? fallback?.inicio ?? '09:00',
       fin: horario?.fin ?? fallback?.fin ?? '19:00',
+      descanso_activo:
+        horario?.descanso_activo ?? fallback?.descanso_activo ?? false,
+      descanso_inicio:
+        horario?.descanso_inicio ?? fallback?.descanso_inicio ?? '13:00',
+      descanso_fin: horario?.descanso_fin ?? fallback?.descanso_fin ?? '14:00',
     }
   })
 }
@@ -77,4 +109,30 @@ export function weeklyAvailabilityMinutes(horarios: HorarioCentro[]) {
     (total, horario) => total + horarioDurationMinutes(horario),
     0
   )
+}
+
+export function timeRangeOverlapsDescanso(
+  horario: HorarioCentro | undefined,
+  startMinutes: number,
+  endMinutes: number
+) {
+  if (!horario?.activo || !horario.descanso_activo) return false
+
+  const descansoStart = timeToMinutes(horario.descanso_inicio)
+  const descansoEnd = timeToMinutes(horario.descanso_fin)
+
+  return startMinutes < descansoEnd && endMinutes > descansoStart
+}
+
+export function firstBookableTime(horario: HorarioCentro | undefined) {
+  if (!horario?.activo) return '09:00'
+
+  const startMinutes = timeToMinutes(horario.inicio)
+  const nextHourEnd = startMinutes + 60
+
+  if (timeRangeOverlapsDescanso(horario, startMinutes, nextHourEnd)) {
+    return horario.descanso_fin
+  }
+
+  return minutesToTime(startMinutes)
 }

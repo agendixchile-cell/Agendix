@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { isDemoMode } from '@/lib/auth/demo'
+import { revalidateCentroPublicPaths } from '@/lib/centro/public-revalidation'
 import {
   profesionalSchema,
   type ProfesionalFormValues,
@@ -15,13 +16,19 @@ import type {
 } from '@/lib/profesionales/types'
 import { createClient } from '@/lib/supabase/server'
 import { getAdminCentroId } from '@/lib/supabase/get-centro-id'
+import { validateProfessionalCapacity } from '@/lib/subscription/server'
 
 const profesionalSelect =
-  'id,profile_id,rol,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono)'
+  'id,profile_id,rol,especialidad,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono)'
+
+type ProfesionalReminderConfig = {
+  email_subject_template: string | null
+  email_body_template: string | null
+}
 
 function toProfesionalListItem(
   miembro: ProfesionalQueryRow,
-  especialidad: string | null = null
+  reminderConfig: ProfesionalReminderConfig | null = null
 ): ProfesionalListItem {
   const profile = miembro.profiles
 
@@ -32,12 +39,62 @@ function toProfesionalListItem(
     apellido: profile?.apellido ?? null,
     email: profile?.email ?? '',
     telefono: profile?.telefono ?? null,
-    especialidad,
+    especialidad: miembro.especialidad ?? null,
+    descanso_entre_reservas_minutos:
+      miembro.descanso_entre_reservas_minutos ?? 0,
+    duracion_sesion_minutos: miembro.duracion_sesion_minutos ?? 60,
+    intervalo_reservas_minutos: miembro.intervalo_reservas_minutos ?? 60,
+    recordatorio_email_subject: reminderConfig?.email_subject_template ?? null,
+    recordatorio_email_body: reminderConfig?.email_body_template ?? null,
     rol: miembro.rol,
     activo: miembro.activo,
     created_at: miembro.created_at,
     updated_at: miembro.updated_at,
   }
+}
+
+function reminderConfigFromValues(
+  values: ProfesionalFormValues
+): ProfesionalReminderConfig {
+  return {
+    email_subject_template: values.recordatorio_email_subject?.trim() || null,
+    email_body_template: values.recordatorio_email_body?.trim() || null,
+  }
+}
+
+async function syncProfesionalReminderConfig(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  centroId: string,
+  profesionalId: string,
+  values: ProfesionalFormValues
+) {
+  const reminderConfig = reminderConfigFromValues(values)
+
+  if (
+    !reminderConfig.email_subject_template &&
+    !reminderConfig.email_body_template
+  ) {
+    const { error } = await supabase
+      .from('configuracion_recordatorios_profesional')
+      .delete()
+      .eq('centro_id', centroId)
+      .eq('profesional_id', profesionalId)
+
+    return { error, reminderConfig }
+  }
+
+  const { error } = await supabase
+    .from('configuracion_recordatorios_profesional')
+    .upsert(
+      {
+        centro_id: centroId,
+        profesional_id: profesionalId,
+        ...reminderConfig,
+      },
+      { onConflict: 'centro_id,profesional_id' }
+    )
+
+  return { error, reminderConfig }
 }
 
 function formatProfilePayload(values: ProfesionalFormValues) {
@@ -59,6 +116,10 @@ function supabaseError(message?: string): string {
     return 'Ya existe un profesional con esos datos.'
   }
 
+  if (error.includes('plan_professional_limit_exceeded')) {
+    return 'Alcanzaste el límite de profesionales de tu plan. Mejora tu plan para seguir creciendo.'
+  }
+
   if (error.includes('foreign key')) {
     return 'No pudimos crear el perfil del profesional. Revisa la configuración de perfiles en Supabase.'
   }
@@ -66,11 +127,19 @@ function supabaseError(message?: string): string {
   return 'No pudimos guardar el profesional. Intenta nuevamente.'
 }
 
+async function revalidateProfesionalPaths(
+  supabase: Awaited<ReturnType<typeof getAdminCentroId>>['supabase'],
+  centroId: string
+) {
+  revalidatePath('/profesionales')
+  revalidatePath('/agenda')
+  await revalidateCentroPublicPaths(supabase, centroId)
+}
+
 async function fetchProfesionalByMembership(
   supabase: Awaited<ReturnType<typeof createClient>>,
   membershipId: string,
-  centroId: string,
-  especialidad: string | null = null
+  centroId: string
 ) {
   const { data, error } = await supabase
     .from('miembros_centro')
@@ -83,10 +152,22 @@ async function fetchProfesionalByMembership(
     return { error: supabaseError(error?.message) }
   }
 
+  const member = data as unknown as ProfesionalQueryRow
+  const { data: reminderConfig, error: reminderConfigError } = await supabase
+    .from('configuracion_recordatorios_profesional')
+    .select('email_subject_template,email_body_template')
+    .eq('centro_id', centroId)
+    .eq('profesional_id', member.profile_id)
+    .maybeSingle()
+
+  if (reminderConfigError) {
+    return { error: supabaseError(reminderConfigError.message) }
+  }
+
   return {
     profesional: toProfesionalListItem(
-      data as unknown as ProfesionalQueryRow,
-      especialidad
+      member,
+      (reminderConfig as ProfesionalReminderConfig | null) ?? null
     ),
   }
 }
@@ -160,6 +241,12 @@ export async function createProfesionalAction(
     return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
   }
 
+  const capacity = await validateProfessionalCapacity(supabase, centroId)
+
+  if (!capacity.ok) {
+    return { ok: false, message: capacity.message }
+  }
+
   const { profile, error: profileError } = await findOrCreateProfile(
     supabase,
     parsed.data
@@ -193,18 +280,38 @@ export async function createProfesionalAction(
       centro_id: centroId,
       profile_id: profile.id,
       rol: 'profesional',
+      especialidad: parsed.data.especialidad?.trim() || null,
+      descanso_entre_reservas_minutos:
+        parsed.data.descanso_entre_reservas_minutos,
+      duracion_sesion_minutos: parsed.data.duracion_sesion_minutos,
+      intervalo_reservas_minutos: parsed.data.intervalo_reservas_minutos,
       activo: parsed.data.activo,
     })
-    .select('id,profile_id,rol,activo,created_at,updated_at')
+    .select(
+      'id,profile_id,rol,especialidad,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,activo,created_at,updated_at'
+    )
     .single()
 
   if (insertMembershipError || !membership) {
     return { ok: false, message: supabaseError(insertMembershipError?.message) }
   }
 
-  revalidatePath('/profesionales')
-  revalidatePath('/agenda')
-  revalidatePath('/agenda')
+  const { error: reminderConfigError, reminderConfig } =
+    await syncProfesionalReminderConfig(
+      supabase,
+      centroId,
+      profile.id,
+      parsed.data
+    )
+
+  if (reminderConfigError) {
+    return {
+      ok: false,
+      message: 'El profesional fue creado, pero no pudimos guardar su recordatorio.',
+    }
+  }
+
+  await revalidateProfesionalPaths(supabase, centroId)
 
   return {
     ok: true,
@@ -216,6 +323,12 @@ export async function createProfesionalAction(
       email: profile.email,
       telefono: profile.telefono,
       especialidad: parsed.data.especialidad?.trim() || null,
+      descanso_entre_reservas_minutos:
+        parsed.data.descanso_entre_reservas_minutos,
+      duracion_sesion_minutos: parsed.data.duracion_sesion_minutos,
+      intervalo_reservas_minutos: parsed.data.intervalo_reservas_minutos,
+      recordatorio_email_subject: reminderConfig.email_subject_template,
+      recordatorio_email_body: reminderConfig.email_body_template,
     },
   }
 }
@@ -284,7 +397,14 @@ export async function updateProfesionalAction(
 
   const { error: membershipUpdateError } = await supabase
     .from('miembros_centro')
-    .update({ activo: parsed.data.activo })
+    .update({
+      activo: parsed.data.activo,
+      especialidad: parsed.data.especialidad?.trim() || null,
+      descanso_entre_reservas_minutos:
+        parsed.data.descanso_entre_reservas_minutos,
+      duracion_sesion_minutos: parsed.data.duracion_sesion_minutos,
+      intervalo_reservas_minutos: parsed.data.intervalo_reservas_minutos,
+    })
     .eq('id', id)
     .eq('centro_id', centroId)
 
@@ -292,19 +412,31 @@ export async function updateProfesionalAction(
     return { ok: false, message: supabaseError(membershipUpdateError.message) }
   }
 
+  const { error: reminderConfigError } = await syncProfesionalReminderConfig(
+    supabase,
+    centroId,
+    membership.profile_id,
+    parsed.data
+  )
+
+  if (reminderConfigError) {
+    return {
+      ok: false,
+      message: 'No pudimos guardar el recordatorio personalizado.',
+    }
+  }
+
   const { profesional, error: fetchError } = await fetchProfesionalByMembership(
     supabase,
     id,
-    centroId,
-    parsed.data.especialidad?.trim() || null
+    centroId
   )
 
   if (fetchError || !profesional) {
     return { ok: false, message: fetchError ?? 'No pudimos actualizar la vista.' }
   }
 
-  revalidatePath('/profesionales')
-  revalidatePath('/agenda')
+  await revalidateProfesionalPaths(supabase, centroId)
 
   return {
     ok: true,
@@ -336,6 +468,27 @@ export async function toggleProfesionalAction(
     return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
   }
 
+  if (activo) {
+    const { data: currentMembership, error: currentError } = await supabase
+      .from('miembros_centro')
+      .select('activo')
+      .eq('id', id)
+      .eq('centro_id', centroId)
+      .maybeSingle()
+
+    if (currentError) {
+      return { ok: false, message: supabaseError(currentError.message) }
+    }
+
+    if (currentMembership?.activo === false) {
+      const capacity = await validateProfessionalCapacity(supabase, centroId)
+
+      if (!capacity.ok) {
+        return { ok: false, message: capacity.message }
+      }
+    }
+  }
+
   const { error: updateError } = await supabase
     .from('miembros_centro')
     .update({ activo })
@@ -356,7 +509,7 @@ export async function toggleProfesionalAction(
     return { ok: false, message: fetchError ?? 'No pudimos actualizar la vista.' }
   }
 
-  revalidatePath('/profesionales')
+  await revalidateProfesionalPaths(supabase, centroId)
 
   return {
     ok: true,

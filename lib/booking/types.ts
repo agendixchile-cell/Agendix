@@ -36,12 +36,19 @@ export type PublicBookingProfessional = {
   especialidad: string | null
   bio: string | null
   avatarUrl: string | null
+  descansoEntreReservasMinutos: number
+  duracionSesionMinutos: number
+  intervaloReservasMinutos: number
 }
 
 export type PublicBusySlot = {
-  id: string
   profesionalId: string
-  salaId: string
+  fechaInicio: string
+  fechaFin: string
+}
+
+export type PublicScheduleBlock = {
+  profesionalId: string | null
   fechaInicio: string
   fechaFin: string
 }
@@ -52,6 +59,7 @@ export type PublicBookingData = {
   profesionales: PublicBookingProfessional[]
   horarios: HorarioCentro[]
   busySlots: PublicBusySlot[]
+  scheduleBlocks: PublicScheduleBlock[]
   activeRoomCount: number
   demoMode: boolean
 }
