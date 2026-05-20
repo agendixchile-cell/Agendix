@@ -2,13 +2,27 @@ import { redirect } from 'next/navigation'
 import { ProfesionalesManager } from '@/components/profesionales/profesionales-manager'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
 import { demoProfesionales } from '@/lib/profesionales/demo'
+import {
+  getDemoSubscriptionContext,
+  getOrganizationUsage,
+  getPlanSnapshotForCentro,
+} from '@/lib/subscription/server'
 import type {
   ProfesionalListItem,
   ProfesionalQueryRow,
 } from '@/lib/profesionales/types'
 import { createClient } from '@/lib/supabase/server'
 
-function toProfesionalListItem(row: ProfesionalQueryRow): ProfesionalListItem {
+type ProfesionalReminderConfig = {
+  profesional_id: string
+  email_subject_template: string | null
+  email_body_template: string | null
+}
+
+function toProfesionalListItem(
+  row: ProfesionalQueryRow,
+  reminderConfig?: ProfesionalReminderConfig
+): ProfesionalListItem {
   return {
     id: row.id,
     profile_id: row.profile_id,
@@ -16,7 +30,13 @@ function toProfesionalListItem(row: ProfesionalQueryRow): ProfesionalListItem {
     apellido: row.profiles?.apellido ?? null,
     email: row.profiles?.email ?? '',
     telefono: row.profiles?.telefono ?? null,
-    especialidad: null,
+    especialidad: row.especialidad ?? null,
+    descanso_entre_reservas_minutos:
+      row.descanso_entre_reservas_minutos ?? 0,
+    duracion_sesion_minutos: row.duracion_sesion_minutos ?? 60,
+    intervalo_reservas_minutos: row.intervalo_reservas_minutos ?? 60,
+    recordatorio_email_subject: reminderConfig?.email_subject_template ?? null,
+    recordatorio_email_body: reminderConfig?.email_body_template ?? null,
     rol: row.rol,
     activo: row.activo,
     created_at: row.created_at,
@@ -28,7 +48,15 @@ export default async function ProfesionalesPage() {
   const demoMode = isDemoMode()
 
   if (demoMode) {
-    return <ProfesionalesManager initialProfesionales={demoProfesionales} demoMode />
+    const subscription = await getDemoSubscriptionContext()
+
+    return (
+      <ProfesionalesManager
+        initialProfesionales={demoProfesionales}
+        demoMode
+        planContext={subscription}
+      />
+    )
   }
 
   const supabase = await createClient()
@@ -69,20 +97,41 @@ export default async function ProfesionalesPage() {
   const { data: profesionales, error: profesionalesError } = await supabase
     .from('miembros_centro')
     .select(
-      'id,profile_id,rol,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono)'
+      'id,profile_id,rol,especialidad,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,activo,created_at,updated_at,profiles!inner(nombre,apellido,email,telefono)'
     )
     .eq('centro_id', membership.centro_id)
-    .in('rol', ['admin', 'profesional'])
+    .in('rol', ['owner', 'admin', 'profesional'])
     .order('created_at', { ascending: false })
+
+  const { data: reminderConfigs, error: reminderConfigsError } = await supabase
+    .from('configuracion_recordatorios_profesional')
+    .select('profesional_id,email_subject_template,email_body_template')
+    .eq('centro_id', membership.centro_id)
+  const [snapshot, usage] = await Promise.all([
+    getPlanSnapshotForCentro(supabase, membership.centro_id),
+    getOrganizationUsage(supabase, membership.centro_id),
+  ])
+
+  const reminderConfigByProfileId = new Map(
+    ((reminderConfigs ?? []) as ProfesionalReminderConfig[]).map((config) => [
+      config.profesional_id,
+      config,
+    ])
+  )
 
   return (
     <ProfesionalesManager
       initialProfesionales={((profesionales ?? []) as unknown as ProfesionalQueryRow[]).map(
-        toProfesionalListItem
+        (profesional) =>
+          toProfesionalListItem(
+            profesional,
+            reminderConfigByProfileId.get(profesional.profile_id)
+          )
       )}
       demoMode={false}
+      planContext={{ ...snapshot, usage }}
       loadError={
-        profesionalesError
+        profesionalesError || reminderConfigsError
           ? 'No pudimos cargar profesionales. Revisa permisos de Supabase e intenta nuevamente.'
           : undefined
       }

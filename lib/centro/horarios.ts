@@ -43,6 +43,16 @@ export function timeToMinutes(time: string) {
   return hours * 60 + minutes
 }
 
+function pad(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+export function minutesToTime(minutes: number) {
+  const safeMinutes = Math.max(0, Math.min(23 * 60 + 59, minutes))
+
+  return `${pad(Math.floor(safeMinutes / 60))}:${pad(safeMinutes % 60)}`
+}
+
 export function horarioDurationMinutes(horario: HorarioCentro) {
   if (!horario.activo) return 0
 
@@ -112,14 +122,6 @@ export function timeRangeOverlapsDescanso(
   const descansoEnd = timeToMinutes(horario.descanso_fin)
 
   return startMinutes < descansoEnd && endMinutes > descansoStart
-}
-
-export function minutesToTime(minutes: number) {
-  const safeMinutes = Math.max(0, Math.min(23 * 60 + 59, minutes))
-  const hours = Math.floor(safeMinutes / 60)
-  const mins = safeMinutes % 60
-
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
 export function firstBookableTime(horario: HorarioCentro | undefined) {

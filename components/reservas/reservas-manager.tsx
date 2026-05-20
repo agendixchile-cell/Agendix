@@ -9,22 +9,31 @@ import {
   Bell,
   CalendarDays,
   CalendarPlus,
+  CalendarX2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Copy,
+  ExternalLink,
   Edit3,
   FileText,
+  Info,
+  LinkIcon,
   Plus,
   RotateCcw,
+  Trash2,
   UserRound,
   X,
   type LucideIcon,
 } from 'lucide-react'
 import {
+  createAgendaBlockAction,
+  deleteAgendaBlockAction,
+} from '@/app/actions/bloqueos-agenda'
+import {
   createReservaAction,
-  updateReservaAsistenciaAction,
+  sendReservaEmailReminderAction,
   updateReservaAction,
   updateReservaEstadoAction,
 } from '@/app/actions/reservas'
@@ -44,29 +53,47 @@ import {
   timeRangeOverlapsDescanso,
   timeToMinutes,
 } from '@/lib/centro/horarios'
-import type { HorarioCentro } from '@/lib/centro/types'
-import type { EstadoAsistencia, EstadoReserva } from '@/lib/types/database'
 import {
-  asistenciaEstados,
-  asistenciaLabels,
+  appTimeZone,
+  normalizeIntlText,
+  zonedDateKey,
+  zonedDateTime,
+  zonedHour,
+  zonedTimeInput,
+} from '@/lib/timezone'
+import type { HorarioCentro } from '@/lib/centro/types'
+import type { Database, EstadoReserva } from '@/lib/types/database'
+import {
+  reservaEstadoDescriptions,
   reservaEstadoLabels,
   reservaEstados,
+  type AgendaBlockListItem,
+  type AgendaBlockScope,
   type ReservaListItem,
   type ReservaPacienteOption,
   type ReservaProfesionalOption,
   type ReservaSalaOption,
   type ReservaServicioOption,
 } from '@/lib/reservas/types'
-import { reservaSchema, type ReservaFormValues } from '@/lib/reservas/validation'
+import {
+  bloqueoAgendaSchema,
+  reservaSchema,
+  type BloqueoAgendaFormValues,
+  type ReservaFormValues,
+} from '@/lib/reservas/validation'
 import type { EvolucionSesionListItem } from '@/lib/fichas/types'
 import {
   evolucionSesionSchema,
   type EvolucionSesionFormValues,
 } from '@/lib/fichas/validation'
+import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client'
+import { detectMeetingProvider, toMeetingPayload } from '@/lib/meetings'
+import { hasFeature, type PlanUsageContext } from '@/lib/plans'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 export type ReservasManagerProps = {
   initialReservas: ReservaListItem[]
+  initialBloqueos: AgendaBlockListItem[]
   initialServicios: ReservaServicioOption[]
   initialSalas: ReservaSalaOption[]
   initialProfesionales: ReservaProfesionalOption[]
@@ -77,6 +104,7 @@ export type ReservasManagerProps = {
   viewMode?: 'agenda' | 'reservas'
   demoMode: boolean
   loadError?: string
+  planContext?: PlanUsageContext
 }
 
 type ModalState =
@@ -108,10 +136,14 @@ type SlotSelection = {
   hora: string
 }
 
+type ReservaRealtimeRow = Database['public']['Tables']['reservas']['Row']
+type AgendaBlockRealtimeRow = Database['public']['Tables']['bloqueos_agenda']['Row']
+
 type DemoState = {
   reservas: ReservaListItem[]
   pacientes: ReservaPacienteOption[]
   evoluciones?: EvolucionSesionListItem[]
+  bloqueos?: AgendaBlockListItem[]
 }
 
 const demoStorageKey = 'agendix-demo-reservas'
@@ -119,11 +151,12 @@ const demoPacientesStorageKey = 'agendix-demo-pacientes'
 const demoServiciosStorageKey = 'agendix-demo-servicios'
 const demoSalasStorageKey = 'agendix-demo-salas'
 const demoProfesionalesStorageKey = 'agendix-demo-profesionales'
-const chileTimeZone = 'America/Santiago'
+const demoBloqueosStorageKey = 'agendix-demo-bloqueos-agenda'
 const timeFormatOptions = {
-  timeZone: chileTimeZone,
+  timeZone: appTimeZone,
   hour: '2-digit',
   minute: '2-digit',
+  hour12: false,
   hourCycle: 'h23',
 } as const
 
@@ -139,6 +172,9 @@ type StoredDemoProfesional = {
   profile_id: string
   nombre: string
   email: string
+  descanso_entre_reservas_minutos?: number
+  duracion_sesion_minutos?: number
+  intervalo_reservas_minutos?: number
   activo?: boolean
 }
 
@@ -166,50 +202,59 @@ function demoId(prefix: string) {
   return `${prefix}-${Date.now()}`
 }
 
-function dateInputValue(date = new Date()) {
+function dateInputValue(date?: Date) {
+  if (!date) return zonedDateKey()
+
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
-function roundedTimeInputValue() {
-  const date = new Date()
-  const roundedMinutes = Math.ceil(date.getMinutes() / 15) * 15
-  date.setMinutes(roundedMinutes, 0, 0)
+function dateFromInput(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
 
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  if (!year || !month || !day) return new Date()
+
+  return new Date(year, month - 1, day)
+}
+
+function roundedTimeInputValue() {
+  const [hours = 0, minutes = 0] = zonedTimeInput(new Date()).split(':').map(Number)
+  const roundedTotal = Math.min(
+    23 * 60 + 45,
+    Math.ceil((hours * 60 + minutes) / 15) * 15
+  )
+
+  return `${pad(Math.floor(roundedTotal / 60))}:${pad(roundedTotal % 60)}`
+}
+
+function addMinutesToTime(value: string, minutes: number) {
+  const [hours = 0, currentMinutes = 0] = value.split(':').map(Number)
+  const total = Math.min(23 * 60 + 45, hours * 60 + currentMinutes + minutes)
+
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
 }
 
 function isoToDateInput(iso: string) {
-  const date = new Date(iso)
-  return dateInputValue(date)
+  return zonedDateKey(iso)
 }
 
 function isoToTimeInput(iso: string) {
-  const date = new Date(iso)
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return zonedTimeInput(iso)
 }
 
-function dateKey(iso: string) {
-  return new Intl.DateTimeFormat('fr-CA', {
-    timeZone: chileTimeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(iso))
-}
-
-function normalizeIntlText(value: string) {
-  return value.replace(/[\u00a0\u202f]/g, ' ')
+function dateKey(value: string | Date = new Date()) {
+  return zonedDateKey(value)
 }
 
 function formatDateTime(iso: string) {
   return normalizeIntlText(
     new Intl.DateTimeFormat('es-CL', {
-      timeZone: chileTimeZone,
+      timeZone: appTimeZone,
       weekday: 'short',
       day: '2-digit',
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false,
       hourCycle: 'h23',
     }).format(new Date(iso))
   )
@@ -218,7 +263,7 @@ function formatDateTime(iso: string) {
 function formatTodayLabel() {
   return normalizeIntlText(
     new Intl.DateTimeFormat('es-CL', {
-      timeZone: chileTimeZone,
+      timeZone: appTimeZone,
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -234,34 +279,90 @@ function formatTimeRange(reserva: ReservaListItem) {
   return `${start} - ${end}`
 }
 
+function formatBlockTimeRange(block: AgendaBlockListItem) {
+  const formatter = new Intl.DateTimeFormat('es-CL', timeFormatOptions)
+  const start = normalizeIntlText(formatter.format(new Date(block.fecha_inicio)))
+  const end = normalizeIntlText(formatter.format(new Date(block.fecha_fin)))
+
+  return `${start} - ${end}`
+}
+
 function patientName(paciente: ReservaPacienteOption) {
   return [paciente.nombre, paciente.apellido].filter(Boolean).join(' ')
 }
 
-function estadoTone(estado: EstadoReserva): 'orange' | 'green' | 'blue' | 'slate' | 'red' {
-  if (estado === 'en_espera') return 'blue'
-  if (estado === 'confirmada') return 'green'
-  if (estado === 'cancelada') return 'red'
-  if (estado === 'completada') return 'slate'
-  if (estado === 'reagendada') return 'slate'
+function estadoTone(estado: EstadoReserva): 'orange' | 'green' | 'slate' | 'red' {
+  if (estado === 'confirmed') return 'green'
+  if (estado === 'completed') return 'slate'
+  if (estado === 'cancelled' || estado === 'no_show') return 'red'
   return 'orange'
 }
 
-function asistenciaTone(
-  estadoAsistencia: EstadoAsistencia
-): 'orange' | 'green' | 'slate' | 'red' {
-  if (estadoAsistencia === 'asistio') return 'green'
-  if (estadoAsistencia === 'no_asistio') return 'red'
-  return 'slate'
+function normalizeReservaStatus(estado?: string | null): EstadoReserva {
+  if (estado === 'confirmed' || estado === 'confirmada') return 'confirmed'
+  if (estado === 'completed' || estado === 'completada') return 'completed'
+  if (estado === 'cancelled' || estado === 'cancelada') return 'cancelled'
+  if (estado === 'no_show') return 'no_show'
+
+  return 'pending'
+}
+
+function asistenciaForReservaStatus(
+  estado: EstadoReserva
+): ReservaListItem['estado_asistencia'] {
+  if (estado === 'completed') return 'asistio'
+  if (estado === 'no_show') return 'no_asistio'
+
+  return 'sin_marcar'
 }
 
 function buildDateRange(values: ReservaFormValues, durationMinutes: number) {
-  const start = new Date(`${values.fecha}T${values.hora}:00`)
+  const start = zonedDateTime(values.fecha, values.hora)
   const end = new Date(start.getTime() + durationMinutes * 60_000)
 
   return {
     fecha_inicio: start.toISOString(),
     fecha_fin: end.toISOString(),
+  }
+}
+
+function mergeReservaRealtimeUpdate(
+  reserva: ReservaListItem,
+  update: Partial<ReservaRealtimeRow>
+): ReservaListItem {
+  return {
+    ...reserva,
+    fecha_inicio: update.fecha_inicio ?? reserva.fecha_inicio,
+    fecha_fin: update.fecha_fin ?? reserva.fecha_fin,
+    estado: update.estado ?? reserva.estado,
+    estado_asistencia: update.estado_asistencia ?? reserva.estado_asistencia,
+    notas: update.notas ?? reserva.notas,
+    meeting_provider:
+      update.meeting_provider === undefined
+        ? reserva.meeting_provider
+        : update.meeting_provider,
+    meeting_url:
+      update.meeting_url === undefined ? reserva.meeting_url : update.meeting_url,
+    auto_generated_meeting:
+      update.auto_generated_meeting ?? reserva.auto_generated_meeting,
+    updated_at: update.updated_at ?? reserva.updated_at,
+  }
+}
+
+function mergeAgendaBlockRealtimeUpdate(
+  block: AgendaBlockListItem,
+  update: Partial<AgendaBlockRealtimeRow>
+): AgendaBlockListItem {
+  return {
+    ...block,
+    profesional_id:
+      update.profesional_id === undefined
+        ? block.profesional_id
+        : update.profesional_id,
+    fecha_inicio: update.fecha_inicio ?? block.fecha_inicio,
+    fecha_fin: update.fecha_fin ?? block.fecha_fin,
+    motivo: update.motivo === undefined ? block.motivo : update.motivo,
+    updated_at: update.updated_at ?? block.updated_at,
   }
 }
 
@@ -277,25 +378,72 @@ function hasDemoConflict(
     | 'profesional'
   >
 ) {
-  if (nextReserva.estado === 'cancelada') return null
+  if (nextReserva.estado === 'cancelled') return null
 
   const nextStart = new Date(nextReserva.fecha_inicio).getTime()
   const nextEnd = new Date(nextReserva.fecha_fin).getTime()
+  const professionalBreakMs =
+    (nextReserva.profesional.descanso_entre_reservas_minutos ?? 0) * 60_000
 
   return (
     reservas.find((reserva) => {
-      if (reserva.id === nextReserva.id || reserva.estado === 'cancelada') {
+      if (reserva.id === nextReserva.id || reserva.estado === 'cancelled') {
         return false
       }
 
       const reservaStart = new Date(reserva.fecha_inicio).getTime()
       const reservaEnd = new Date(reserva.fecha_fin).getTime()
       const overlaps = reservaStart < nextEnd && reservaEnd > nextStart
+      const sameProfessional = reserva.profesional.id === nextReserva.profesional.id
+      const professionalOverlaps =
+        sameProfessional &&
+        nextStart < reservaEnd + professionalBreakMs &&
+        nextEnd + professionalBreakMs > reservaStart
 
       return (
-        overlaps &&
-        (reserva.sala.id === nextReserva.sala.id ||
-          reserva.profesional.id === nextReserva.profesional.id)
+        (overlaps && reserva.sala.id === nextReserva.sala.id) ||
+        professionalOverlaps
+      )
+    }) ?? null
+  )
+}
+
+function overlapsIsoRange(
+  startIso: string,
+  endIso: string,
+  busyStartIso: string,
+  busyEndIso: string
+) {
+  const start = new Date(startIso).getTime()
+  const end = new Date(endIso).getTime()
+  const busyStart = new Date(busyStartIso).getTime()
+  const busyEnd = new Date(busyEndIso).getTime()
+
+  return start < busyEnd && end > busyStart
+}
+
+function hasDemoBlockConflict(
+  reservas: ReservaListItem[],
+  block: Pick<
+    AgendaBlockListItem,
+    'fecha_inicio' | 'fecha_fin' | 'profesional_id'
+  >
+) {
+  return (
+    reservas.find((reserva) => {
+      if (reserva.estado === 'cancelled') return false
+      if (
+        block.profesional_id &&
+        reserva.profesional.id !== block.profesional_id
+      ) {
+        return false
+      }
+
+      return overlapsIsoRange(
+        block.fecha_inicio,
+        block.fecha_fin,
+        reserva.fecha_inicio,
+        reserva.fecha_fin
       )
     }) ?? null
   )
@@ -303,6 +451,7 @@ function hasDemoConflict(
 
 export function ReservasManager({
   initialReservas,
+  initialBloqueos,
   initialServicios,
   initialSalas,
   initialProfesionales,
@@ -313,9 +462,11 @@ export function ReservasManager({
   viewMode = 'agenda',
   demoMode,
   loadError,
+  planContext,
 }: ReservasManagerProps) {
   const router = useRouter()
   const [reservas, setReservas] = useState(initialReservas)
+  const [bloqueos, setBloqueos] = useState(initialBloqueos)
   const [pacientes, setPacientes] = useState(initialPacientes)
   const [evoluciones, setEvoluciones] = useState(initialEvoluciones)
   const [servicios, setServicios] = useState(initialServicios)
@@ -325,8 +476,11 @@ export function ReservasManager({
     loadError ? { type: 'error', message: loadError } : null
   )
   const [modal, setModal] = useState<ModalState | null>(null)
+  const [blockModal, setBlockModal] = useState(false)
   const [selectedReserva, setSelectedReserva] =
     useState<ReservaListItem | null>(null)
+  const [selectedBlock, setSelectedBlock] =
+    useState<AgendaBlockListItem | null>(null)
   const [evolucionModal, setEvolucionModal] =
     useState<EvolucionModalState | null>(null)
   const [copiedPublicLink, setCopiedPublicLink] = useState(false)
@@ -334,7 +488,7 @@ export function ReservasManager({
   const [calendarView, setCalendarView] = useState<CalendarView>('semana')
   const [selectedDate, setSelectedDate] = useState(dateInputValue())
   const [reservasSearch, setReservasSearch] = useState('')
-  const [calendarFilters] = useState<CalendarFiltersState>({
+  const [calendarFilters, setCalendarFilters] = useState<CalendarFiltersState>({
     profesionalId: '',
     servicioId: '',
     estado: 'todos',
@@ -344,6 +498,32 @@ export function ReservasManager({
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setReservas(initialReservas)
+      setSelectedReserva((current) => {
+        if (!current) return current
+
+        return initialReservas.find((reserva) => reserva.id === current.id) ?? current
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [initialReservas])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setBloqueos(initialBloqueos)
+      setSelectedBlock((current) => {
+        if (!current) return current
+
+        return initialBloqueos.find((block) => block.id === current.id) ?? current
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [initialBloqueos])
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       setCurrentTime(new Date().getTime())
     }, 60_000)
@@ -351,15 +531,142 @@ export function ReservasManager({
     return () => window.clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    if (demoMode) return
+
+    const supabase = createBrowserSupabaseClient()
+    const refreshAgenda = () => router.refresh()
+    const applyReservaUpdate = (next: Partial<ReservaRealtimeRow>) => {
+      const reservaId = next.id
+
+      if (!reservaId) {
+        refreshAgenda()
+        return
+      }
+
+      setReservas((current) =>
+        current.map((reserva) =>
+          reserva.id === reservaId
+            ? mergeReservaRealtimeUpdate(reserva, next)
+            : reserva
+        )
+      )
+      setSelectedReserva((current) =>
+        current?.id === reservaId
+          ? mergeReservaRealtimeUpdate(current, next)
+          : current
+      )
+      refreshAgenda()
+    }
+    const applyBlockUpdate = (next: Partial<AgendaBlockRealtimeRow>) => {
+      const blockId = next.id
+
+      if (!blockId) {
+        refreshAgenda()
+        return
+      }
+
+      setBloqueos((current) =>
+        current.map((block) =>
+          block.id === blockId ? mergeAgendaBlockRealtimeUpdate(block, next) : block
+        )
+      )
+      setSelectedBlock((current) =>
+        current?.id === blockId
+          ? mergeAgendaBlockRealtimeUpdate(current, next)
+          : current
+      )
+      refreshAgenda()
+    }
+
+    const channel = supabase
+      .channel('agendix-reservas-agenda')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'reservas' },
+        (payload) => {
+          applyReservaUpdate(payload.new as Partial<ReservaRealtimeRow>)
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'reservas' },
+        refreshAgenda
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'reservas' },
+        (payload) => {
+          const reservaId = (payload.old as Partial<ReservaRealtimeRow>).id
+
+          if (reservaId) {
+            setReservas((current) =>
+              current.filter((reserva) => reserva.id !== reservaId)
+            )
+            setSelectedReserva((current) =>
+              current?.id === reservaId ? null : current
+            )
+          }
+
+          refreshAgenda()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'bloqueos_agenda' },
+        (payload) => {
+          applyBlockUpdate(payload.new as Partial<AgendaBlockRealtimeRow>)
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'bloqueos_agenda' },
+        refreshAgenda
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'bloqueos_agenda' },
+        (payload) => {
+          const blockId = (payload.old as Partial<AgendaBlockRealtimeRow>).id
+
+          if (blockId) {
+            setBloqueos((current) =>
+              current.filter((block) => block.id !== blockId)
+            )
+            setSelectedBlock((current) =>
+              current?.id === blockId ? null : current
+            )
+          }
+
+          refreshAgenda()
+        }
+      )
+      .subscribe()
+    const interval = window.setInterval(refreshAgenda, 30_000)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshAgenda()
+    }
+
+    window.addEventListener('focus', refreshAgenda)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshAgenda)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      void supabase.removeChannel(channel)
+    }
+  }, [demoMode, router])
+
+  const agendaReservas = reservas
+
   const reservasFiltradas = useMemo(() => {
-    const selected = selectedDate
-      ? new Date(`${selectedDate}T00:00:00`)
-      : new Date()
+    const selected = selectedDate ? dateFromInput(selectedDate) : new Date()
     const selectedMonth = selectedDate.slice(0, 7)
     const weekStart = startOfWeek(selected)
     const weekEnd = addDays(weekStart, 7)
 
-    return reservas.filter((reserva) => {
+    return agendaReservas.filter((reserva) => {
       const reservaKey = dateKey(reserva.fecha_inicio)
       const matchesFilters =
         (!calendarFilters.profesionalId ||
@@ -377,13 +684,41 @@ export function ReservasManager({
       }
 
       if (calendarView === 'semana') {
-        const reservaDay = new Date(`${reservaKey}T00:00:00`)
+        const reservaDay = dateFromInput(reservaKey)
         return reservaDay >= weekStart && reservaDay < weekEnd
       }
 
       return reservaKey.startsWith(selectedMonth)
     })
-  }, [calendarFilters, calendarView, reservas, selectedDate])
+  }, [agendaReservas, calendarFilters, calendarView, selectedDate])
+
+  const bloqueosFiltrados = useMemo(() => {
+    const selected = selectedDate ? dateFromInput(selectedDate) : new Date()
+    const selectedMonth = selectedDate.slice(0, 7)
+    const weekStart = startOfWeek(selected)
+    const weekEnd = addDays(weekStart, 7)
+
+    return bloqueos.filter((block) => {
+      const blockKey = dateKey(block.fecha_inicio)
+      const matchesProfessional =
+        !calendarFilters.profesionalId ||
+        !block.profesional_id ||
+        block.profesional_id === calendarFilters.profesionalId
+
+      if (!matchesProfessional) return false
+
+      if (calendarView === 'dia') {
+        return blockKey === selectedDate
+      }
+
+      if (calendarView === 'semana') {
+        const blockDay = dateFromInput(blockKey)
+        return blockDay >= weekStart && blockDay < weekEnd
+      }
+
+      return blockKey.startsWith(selectedMonth)
+    })
+  }, [bloqueos, calendarFilters.profesionalId, calendarView, selectedDate])
 
   const reservasDirectory = useMemo(() => {
     const term = normalizeIntlText(reservasSearch).trim().toLowerCase()
@@ -411,7 +746,6 @@ export function ReservasManager({
             reserva.profesional.nombre,
             reserva.sala.nombre,
             reservaEstadoLabels[reserva.estado],
-            asistenciaLabels[reserva.estado_asistencia],
           ].join(' ')
         ).toLowerCase()
 
@@ -425,48 +759,53 @@ export function ReservasManager({
   }, [calendarFilters, reservas, reservasSearch])
 
   const todayReservas = useMemo(() => {
-    const today = dateKey(new Date().toISOString())
-    return reservas
+    const today = dateKey()
+    return agendaReservas
       .filter((reserva) => dateKey(reserva.fecha_inicio) === today)
       .sort(
         (a, b) =>
           new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
       )
-  }, [reservas])
+  }, [agendaReservas])
   const todayCount = todayReservas.length
   const totalCount = reservas.length
   const confirmedTodayCount = todayReservas.filter(
-    (reserva) => reserva.estado === 'confirmada'
+    (reserva) => reserva.estado === 'confirmed'
   ).length
   const pendingTodayCount = todayReservas.filter(
-    (reserva) => reserva.estado === 'pendiente'
+    (reserva) => reserva.estado === 'pending'
   ).length
-  const waitingTodayCount = todayReservas.filter(
-    (reserva) => reserva.estado === 'en_espera'
+  const completedTodayCount = todayReservas.filter(
+    (reserva) => reserva.estado === 'completed'
   ).length
   const totalConfirmedCount = reservas.filter(
-    (reserva) => reserva.estado === 'confirmada'
+    (reserva) => reserva.estado === 'confirmed'
   ).length
   const totalPendingCount = reservas.filter(
-    (reserva) => reserva.estado === 'pendiente'
+    (reserva) => reserva.estado === 'pending'
   ).length
-  const totalCancelledCount = reservas.filter(
-    (reserva) => reserva.estado === 'cancelada'
+  const totalCompletedCount = reservas.filter(
+    (reserva) => reserva.estado === 'completed'
   ).length
   const attentionNeededCount = todayReservas.filter(
-    (reserva) =>
-      reserva.estado === 'cancelada' ||
-      reserva.estado_asistencia === 'no_asistio'
+    (reserva) => reserva.estado === 'cancelled' || reserva.estado === 'no_show'
   ).length
   const nextReserva = todayReservas.find((reserva) => {
     return (
-      reserva.estado !== 'cancelada' &&
-      reserva.estado !== 'completada' &&
+      reserva.estado !== 'cancelled' &&
+      reserva.estado !== 'completed' &&
+      reserva.estado !== 'no_show' &&
       new Date(reserva.fecha_fin).getTime() >= currentTime
     )
   })
   const setupReady =
     servicios.length > 0 && salas.length > 0 && profesionales.length > 0
+  const canUseMeetingLinks = planContext
+    ? hasFeature(planContext.planId, 'meeting_links')
+    : true
+  const canUseSharedCalendar = planContext
+    ? hasFeature(planContext.planId, 'shared_calendar')
+    : true
 
   const copyPublicLink = async () => {
     if (!publicBookingPath) {
@@ -506,9 +845,10 @@ export function ReservasManager({
       paciente_telefono: '',
       fecha: '',
       hora: '',
-      estado: 'pendiente',
+      estado: 'pending',
       estado_asistencia: 'sin_marcar',
       notas: '',
+      meeting_url: '',
     },
   })
 
@@ -522,18 +862,55 @@ export function ReservasManager({
     },
   })
 
+  const blockForm = useForm<BloqueoAgendaFormValues>({
+    resolver: zodResolver(bloqueoAgendaSchema),
+    defaultValues: {
+      scope: 'centro',
+      profesional_id: '',
+      fecha: '',
+      hora_inicio: '',
+      hora_fin: '',
+      motivo: '',
+    },
+  })
+
   const selectedServiceId = useWatch({
     control: form.control,
     name: 'servicio_id',
+  })
+  const selectedProfessionalId = useWatch({
+    control: form.control,
+    name: 'profesional_id',
+  })
+  const blockScope = useWatch({
+    control: blockForm.control,
+    name: 'scope',
   })
   const selectedPacienteId = useWatch({
     control: form.control,
     name: 'paciente_id',
   })
+  const selectedPaciente = pacientes.find(
+    (paciente) => paciente.id === selectedPacienteId
+  )
   const selectedService = servicios.find(
     (servicio) => servicio.id === selectedServiceId
   )
+  const selectedProfessional = profesionales.find(
+    (profesional) => profesional.id === selectedProfessionalId
+  )
+  const selectedDurationMinutes =
+    selectedProfessional?.duracion_sesion_minutos ??
+    selectedService?.duracion_minutos ??
+    0
   const creatingNewPaciente = !selectedPacienteId
+
+  useEffect(() => {
+    if (!modal) return
+
+    form.setValue('paciente_email', selectedPaciente?.email ?? '')
+    form.setValue('paciente_telefono', selectedPaciente?.telefono ?? '')
+  }, [form, modal, selectedPaciente])
 
   useEffect(() => {
     if (!demoMode) return
@@ -545,6 +922,7 @@ export function ReservasManager({
     let storedServiciosValue: ReservaServicioOption[] | null = null
     let storedSalasValue: ReservaSalaOption[] | null = null
     let storedProfesionalesValue: ReservaProfesionalOption[] | null = null
+    let storedBloqueosValue: AgendaBlockListItem[] | null = null
 
     try {
       const storedState = window.localStorage.getItem(demoStorageKey)
@@ -623,7 +1001,23 @@ export function ReservasManager({
               id: profesional.profile_id,
               nombre: profesional.nombre,
               email: profesional.email,
+              descanso_entre_reservas_minutos:
+                profesional.descanso_entre_reservas_minutos ?? 0,
+              duracion_sesion_minutos:
+                profesional.duracion_sesion_minutos ?? 60,
+              intervalo_reservas_minutos:
+                profesional.intervalo_reservas_minutos ?? 60,
             }))
+        }
+      }
+
+      const storedBloqueos = window.localStorage.getItem(demoBloqueosStorageKey)
+
+      if (storedBloqueos) {
+        const parsedBloqueos = JSON.parse(storedBloqueos)
+
+        if (Array.isArray(parsedBloqueos)) {
+          storedBloqueosValue = parsedBloqueos as AgendaBlockListItem[]
         }
       }
     } catch {
@@ -633,13 +1027,23 @@ export function ReservasManager({
     window.setTimeout(() => {
       if (storedValue) {
         setReservas(
-          storedValue.reservas.map((reserva) => ({
-            ...reserva,
-            estado_asistencia: reserva.estado_asistencia ?? 'sin_marcar',
-          }))
+          storedValue.reservas.map((reserva) => {
+            const estado = normalizeReservaStatus(reserva.estado)
+
+            return {
+              ...reserva,
+              estado,
+              estado_asistencia:
+                reserva.estado_asistencia ?? asistenciaForReservaStatus(estado),
+              meeting_provider: reserva.meeting_provider ?? null,
+              meeting_url: reserva.meeting_url ?? null,
+              auto_generated_meeting: reserva.auto_generated_meeting ?? false,
+            }
+          })
         )
         setPacientes(storedValue.pacientes)
         setEvoluciones(storedValue.evoluciones ?? initialEvoluciones)
+        setBloqueos(storedValue.bloqueos ?? initialBloqueos)
       }
       if (storedPacientesValue) {
         setPacientes(storedPacientesValue)
@@ -653,8 +1057,11 @@ export function ReservasManager({
       if (storedProfesionalesValue) {
         setProfesionales(storedProfesionalesValue)
       }
+      if (storedBloqueosValue) {
+        setBloqueos(storedBloqueosValue)
+      }
     }, 0)
-  }, [demoMode, initialEvoluciones])
+  }, [demoMode, initialBloqueos, initialEvoluciones])
 
   const saveSharedDemoPacientes = (nextPacientes: ReservaPacienteOption[]) => {
     const timestamp = nowIso()
@@ -703,18 +1110,25 @@ export function ReservasManager({
   const saveDemoState = (
     nextReservas: ReservaListItem[],
     nextPacientes = pacientes,
-    nextEvoluciones = evoluciones
+    nextEvoluciones = evoluciones,
+    nextBloqueos = bloqueos
   ) => {
     setReservas(nextReservas)
     setPacientes(nextPacientes)
     setEvoluciones(nextEvoluciones)
+    setBloqueos(nextBloqueos)
     window.localStorage.setItem(
       demoStorageKey,
       JSON.stringify({
         reservas: nextReservas,
         pacientes: nextPacientes,
         evoluciones: nextEvoluciones,
+        bloqueos: nextBloqueos,
       })
+    )
+    window.localStorage.setItem(
+      demoBloqueosStorageKey,
+      JSON.stringify(nextBloqueos)
     )
     saveSharedDemoPacientes(nextPacientes)
   }
@@ -729,10 +1143,29 @@ export function ReservasManager({
     paciente_telefono: '',
     fecha: dateInputValue(),
     hora: roundedTimeInputValue(),
-    estado: 'pendiente',
+    estado: 'pending',
     estado_asistencia: 'sin_marcar',
     notas: '',
+    meeting_url: '',
   })
+
+  const currentHorarios = () => {
+    if (!demoMode) return normalizeHorarios(initialHorarios)
+
+    try {
+      const storedHorariosValue = window.localStorage.getItem(horariosCentroStorageKey)
+
+      if (storedHorariosValue) {
+        return normalizeHorarios(
+          JSON.parse(storedHorariosValue) as HorarioCentro[]
+        )
+      }
+    } catch {
+      window.localStorage.removeItem(horariosCentroStorageKey)
+    }
+
+    return normalizeHorarios(initialHorarios)
+  }
 
   const openCreate = (slot?: SlotSelection) => {
     if (!setupReady) {
@@ -753,6 +1186,22 @@ export function ReservasManager({
     setModal({ mode: 'create' })
   }
 
+  const openBlockModal = (slot?: SlotSelection) => {
+    const start = slot?.hora ?? roundedTimeInputValue()
+
+    setFeedback(null)
+    setSelectedBlock(null)
+    blockForm.reset({
+      scope: 'centro',
+      profesional_id: profesionales[0]?.id ?? '',
+      fecha: slot?.fecha ?? dateInputValue(),
+      hora_inicio: start,
+      hora_fin: addMinutesToTime(start, 60),
+      motivo: '',
+    })
+    setBlockModal(true)
+  }
+
   const openEdit = (reserva: ReservaListItem) => {
     setFeedback(null)
     setSelectedReserva(null)
@@ -762,13 +1211,14 @@ export function ReservasManager({
       sala_id: reserva.sala.id,
       paciente_id: reserva.paciente.id,
       paciente_nombre: '',
-      paciente_email: '',
-      paciente_telefono: '',
+      paciente_email: reserva.paciente.email ?? '',
+      paciente_telefono: reserva.paciente.telefono ?? '',
       fecha: isoToDateInput(reserva.fecha_inicio),
       hora: isoToTimeInput(reserva.fecha_inicio),
       estado: reserva.estado,
       estado_asistencia: reserva.estado_asistencia,
       notas: reserva.notas ?? '',
+      meeting_url: reserva.meeting_url ?? '',
     })
     setModal({ mode: 'edit', reserva })
   }
@@ -778,13 +1228,32 @@ export function ReservasManager({
     form.reset()
   }
 
+  const closeBlockModal = () => {
+    setBlockModal(false)
+    blockForm.reset()
+  }
+
   const resetDemo = () => {
-    saveDemoState(initialReservas, initialPacientes, initialEvoluciones)
+    saveDemoState(
+      initialReservas,
+      initialPacientes,
+      initialEvoluciones,
+      initialBloqueos
+    )
     setFeedback({ type: 'success', message: 'Demo restablecido.' })
   }
 
   const appendPacienteIfNeeded = (paciente?: ReservaPacienteOption) => {
-    if (!paciente || pacientes.some((item) => item.id === paciente.id)) return pacientes
+    if (!paciente) return pacientes
+
+    if (pacientes.some((item) => item.id === paciente.id)) {
+      const nextPacientes = pacientes.map((item) =>
+        item.id === paciente.id ? paciente : item
+      )
+      setPacientes(nextPacientes)
+
+      return nextPacientes
+    }
 
     const nextPacientes = [paciente, ...pacientes]
     setPacientes(nextPacientes)
@@ -813,15 +1282,68 @@ export function ReservasManager({
         id: demoId('demo-paciente'),
         nombre: values.paciente_nombre?.trim() ?? '',
         apellido: null,
-        email: values.paciente_email?.trim() || null,
+        email: values.paciente_email?.trim().toLowerCase() || null,
         telefono: values.paciente_telefono?.trim() || null,
       }
       nextPacientes = [paciente, ...pacientes]
+    } else {
+      const updatedPaciente: ReservaPacienteOption = {
+        ...paciente,
+        email: values.paciente_email?.trim().toLowerCase() || null,
+        telefono: values.paciente_telefono?.trim() || null,
+      }
+      paciente = updatedPaciente
+      nextPacientes = pacientes.map((item) =>
+        item.id === updatedPaciente.id ? updatedPaciente : item
+      )
     }
 
     const timestamp = nowIso()
-    const range = buildDateRange(values, servicio.duracion_minutos)
+    const durationMinutes =
+      profesional.duracion_sesion_minutos ?? servicio.duracion_minutos
+    const meetingPayload = toMeetingPayload(values.meeting_url)
+
+    if (
+      meetingPayload.meeting_url &&
+      planContext &&
+      !hasFeature(planContext.planId, 'meeting_links')
+    ) {
+      setFeedback({
+        type: 'error',
+        message:
+          'Los enlaces de Zoom o Google Meet están disponibles desde Agendix Center Pro.',
+      })
+      return
+    }
+
+    const range = buildDateRange(values, durationMinutes)
+    const horarios = currentHorarios()
+    const horario = getHorarioForDate(zonedDateTime(values.fecha, '12:00'), horarios)
+    const startMinutes = timeToMinutes(values.hora)
+    const endMinutes = startMinutes + durationMinutes
+
+    if (
+      !horario?.activo ||
+      startMinutes < timeToMinutes(horario.inicio) ||
+      endMinutes > timeToMinutes(horario.fin)
+    ) {
+      setFeedback({
+        type: 'error',
+        message: 'Ese horario está fuera del horario de atención.',
+      })
+      return
+    }
+
+    if (timeRangeOverlapsDescanso(horario, startMinutes, endMinutes)) {
+      setFeedback({
+        type: 'error',
+        message: 'Ese horario coincide con el descanso del centro.',
+      })
+      return
+    }
+
     const reservaId = modal?.mode === 'edit' ? modal.reserva.id : demoId('demo-reserva')
+    const reservaEstado = modal?.mode === 'edit' ? values.estado : 'pending'
     const nextReserva: ReservaListItem = {
       id: reservaId,
       servicio,
@@ -830,19 +1352,56 @@ export function ReservasManager({
       paciente,
       fecha_inicio: range.fecha_inicio,
       fecha_fin: range.fecha_fin,
-      estado: values.estado,
-      estado_asistencia: values.estado_asistencia,
+      estado: reservaEstado,
+      estado_asistencia: asistenciaForReservaStatus(reservaEstado),
       notas: values.notas?.trim() || null,
+      meeting_provider: meetingPayload.meeting_provider,
+      meeting_url: meetingPayload.meeting_url,
+      auto_generated_meeting: meetingPayload.auto_generated_meeting,
       created_at: modal?.mode === 'edit' ? modal.reserva.created_at : timestamp,
       updated_at: timestamp,
     }
+    const blockConflict = bloqueos.find((block) => {
+      const appliesToProfessional =
+        !block.profesional_id || block.profesional_id === nextReserva.profesional.id
+
+      return (
+        appliesToProfessional &&
+        overlapsIsoRange(
+          nextReserva.fecha_inicio,
+          nextReserva.fecha_fin,
+          block.fecha_inicio,
+          block.fecha_fin
+        )
+      )
+    })
+
+    if (blockConflict) {
+      setFeedback({
+        type: 'error',
+        message: blockConflict.profesional_id
+          ? 'El profesional tiene bloqueado ese horario.'
+          : 'El centro tiene bloqueado ese horario.',
+      })
+      return
+    }
+
     const conflict = hasDemoConflict(reservas, nextReserva)
 
     if (conflict) {
+      const overlapsSameRoom =
+        conflict.sala.id === nextReserva.sala.id &&
+        overlapsIsoRange(
+          nextReserva.fecha_inicio,
+          nextReserva.fecha_fin,
+          conflict.fecha_inicio,
+          conflict.fecha_fin
+        )
+
       setFeedback({
         type: 'error',
         message:
-          conflict.sala.id === nextReserva.sala.id
+          overlapsSameRoom
             ? 'La sala ya tiene una reserva en ese horario.'
             : 'El profesional ya tiene una reserva en ese horario.',
       })
@@ -865,6 +1424,61 @@ export function ReservasManager({
           : 'Reserva creada en modo demo.',
     })
     closeModal()
+  }
+
+  const handleDemoBlockSave = (values: BloqueoAgendaFormValues) => {
+    const start = zonedDateTime(values.fecha, values.hora_inicio)
+    const end = zonedDateTime(values.fecha, values.hora_fin)
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      setFeedback({
+        type: 'error',
+        message: 'Selecciona fecha y horas válidas para bloquear.',
+      })
+      return
+    }
+
+    const profesional =
+      values.scope === 'profesional'
+        ? profesionales.find((item) => item.id === values.profesional_id) ?? null
+        : null
+
+    if (values.scope === 'profesional' && !profesional) {
+      setFeedback({
+        type: 'error',
+        message: 'Selecciona un profesional activo para bloquear.',
+      })
+      return
+    }
+
+    const timestamp = nowIso()
+    const nextBlock: AgendaBlockListItem = {
+      id: demoId('demo-bloqueo'),
+      centro_id: 'demo-centro',
+      profesional_id: profesional?.id ?? null,
+      fecha_inicio: start.toISOString(),
+      fecha_fin: end.toISOString(),
+      motivo: values.motivo?.trim() || null,
+      created_at: timestamp,
+      updated_at: timestamp,
+      profesional,
+    }
+    const conflict = hasDemoBlockConflict(reservas, nextBlock)
+
+    if (conflict) {
+      setFeedback({
+        type: 'error',
+        message: nextBlock.profesional_id
+          ? 'Ese profesional ya tiene una reserva en ese bloque.'
+          : 'Ya existe una reserva del centro dentro de ese bloque.',
+      })
+      return
+    }
+
+    const nextBloqueos = [nextBlock, ...bloqueos]
+    saveDemoState(reservas, pacientes, evoluciones, nextBloqueos)
+    setFeedback({ type: 'success', message: 'Bloqueo creado en modo demo.' })
+    closeBlockModal()
   }
 
   const onSubmit = form.handleSubmit((values) => {
@@ -906,6 +1520,60 @@ export function ReservasManager({
     })
   })
 
+  const onSubmitBlock = blockForm.handleSubmit((values) => {
+    if (demoMode) {
+      handleDemoBlockSave(values)
+      return
+    }
+
+    startTransition(async () => {
+      const result = await createAgendaBlockAction(values)
+
+      if (!result.ok) {
+        setFeedback({ type: 'error', message: result.message })
+        return
+      }
+
+      const savedBlock = result.bloqueo
+
+      if (savedBlock) {
+        setBloqueos((current) => [savedBlock, ...current])
+      }
+
+      setFeedback({ type: 'success', message: result.message })
+      closeBlockModal()
+      router.refresh()
+    })
+  })
+
+  const deleteBlock = (block: AgendaBlockListItem) => {
+    setFeedback(null)
+
+    if (demoMode) {
+      const nextBloqueos = bloqueos.filter((item) => item.id !== block.id)
+      saveDemoState(reservas, pacientes, evoluciones, nextBloqueos)
+      setSelectedBlock(null)
+      setFeedback({ type: 'success', message: 'Bloqueo eliminado en modo demo.' })
+      return
+    }
+
+    setPendingReservaId(block.id)
+    startTransition(async () => {
+      const result = await deleteAgendaBlockAction(block.id)
+      setPendingReservaId(null)
+
+      if (!result.ok) {
+        setFeedback({ type: 'error', message: result.message })
+        return
+      }
+
+      setBloqueos((current) => current.filter((item) => item.id !== block.id))
+      setSelectedBlock(null)
+      setFeedback({ type: 'success', message: result.message })
+      router.refresh()
+    })
+  }
+
   const updateEstado = (reserva: ReservaListItem, estado: EstadoReserva) => {
     setFeedback(null)
 
@@ -913,13 +1581,18 @@ export function ReservasManager({
       let updatedReserva = reserva
       const nextReservas = reservas.map((item) => {
         if (item.id !== reserva.id) return item
-        updatedReserva = { ...item, estado, updated_at: nowIso() }
+        updatedReserva = {
+          ...item,
+          estado,
+          estado_asistencia: asistenciaForReservaStatus(estado),
+          updated_at: nowIso(),
+        }
         return updatedReserva
       })
       saveDemoState(nextReservas)
-      setSelectedReserva((current) =>
-        current?.id === reserva.id ? updatedReserva : current
-      )
+      setSelectedReserva((current) => {
+        return current?.id === reserva.id ? updatedReserva : current
+      })
       setFeedback({ type: 'success', message: 'Estado actualizado en modo demo.' })
       return
     }
@@ -939,9 +1612,9 @@ export function ReservasManager({
         setReservas((current) =>
           current.map((item) => (item.id === savedReserva.id ? savedReserva : item))
         )
-        setSelectedReserva((current) =>
-          current?.id === savedReserva.id ? savedReserva : current
-        )
+        setSelectedReserva((current) => {
+          return current?.id === savedReserva.id ? savedReserva : current
+        })
       }
 
       setFeedback({ type: 'success', message: result.message })
@@ -949,56 +1622,47 @@ export function ReservasManager({
     })
   }
 
-  const updateAsistencia = (
-    reserva: ReservaListItem,
-    estadoAsistencia: EstadoAsistencia
-  ) => {
+  const sendForcedEmailReminder = (reserva: ReservaListItem) => {
     setFeedback(null)
 
-    if (demoMode) {
-      let updatedReserva = reserva
-      const nextReservas = reservas.map((item) => {
-        if (item.id !== reserva.id) return item
-        updatedReserva = {
-          ...item,
-          estado_asistencia: estadoAsistencia,
-          updated_at: nowIso(),
-        }
-        return updatedReserva
+    if (!reserva.paciente.email?.trim()) {
+      openEdit(reserva)
+      setFeedback({
+        type: 'error',
+        message:
+          'Agrega el email del paciente y guarda la reserva para enviar el recordatorio.',
       })
-      saveDemoState(nextReservas)
-      setSelectedReserva((current) =>
-        current?.id === reserva.id ? updatedReserva : current
-      )
-      setFeedback({ type: 'success', message: 'Asistencia actualizada en modo demo.' })
+      return
+    }
+
+    if (demoMode) {
+      setFeedback({
+        type: 'success',
+        message: 'Recordatorio de correo simulado en modo demo.',
+      })
       return
     }
 
     setPendingReservaId(reserva.id)
     startTransition(async () => {
-      const result = await updateReservaAsistenciaAction(
-        reserva.id,
-        estadoAsistencia
-      )
-      setPendingReservaId(null)
+      try {
+        const result = await sendReservaEmailReminderAction(reserva.id)
 
-      if (!result.ok) {
-        setFeedback({ type: 'error', message: result.message })
-        return
+        if (!result.ok) {
+          setFeedback({ type: 'error', message: result.message })
+          return
+        }
+
+        setFeedback({ type: 'success', message: result.message })
+        router.refresh()
+      } catch {
+        setFeedback({
+          type: 'error',
+          message: 'No pudimos enviar el recordatorio. Intenta nuevamente.',
+        })
+      } finally {
+        setPendingReservaId(null)
       }
-
-      if (result.reserva) {
-        const savedReserva = result.reserva
-        setReservas((current) =>
-          current.map((item) => (item.id === savedReserva.id ? savedReserva : item))
-        )
-        setSelectedReserva((current) =>
-          current?.id === savedReserva.id ? savedReserva : current
-        )
-      }
-
-      setFeedback({ type: 'success', message: result.message })
-      router.refresh()
     })
   }
 
@@ -1047,15 +1711,15 @@ export function ReservasManager({
         item.id === evolucionModal.reserva.id
           ? {
               ...item,
-              estado: 'completada' as EstadoReserva,
-              estado_asistencia: 'asistio' as EstadoAsistencia,
+              estado: 'completed' as EstadoReserva,
+              estado_asistencia: 'asistio' as ReservaListItem['estado_asistencia'],
               updated_at: timestamp,
             }
           : item
       )
 
       saveDemoState(nextReservas, pacientes, nextEvoluciones)
-      setFeedback({ type: 'success', message: 'Evolución guardada en modo demo.' })
+      setFeedback({ type: 'success', message: 'Ficha clínica guardada en modo demo.' })
       closeEvolucion()
       return
     }
@@ -1083,7 +1747,7 @@ export function ReservasManager({
             item.id === savedEvolucion.reserva_id
               ? {
                   ...item,
-                  estado: 'completada',
+                  estado: 'completed',
                   estado_asistencia: 'asistio',
                   updated_at: savedEvolucion.updated_at,
                 }
@@ -1139,6 +1803,14 @@ export function ReservasManager({
           <Copy size={16} aria-hidden="true" />
           {copiedPublicLink ? 'Link copiado' : 'Copiar link público'}
         </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => openBlockModal()}
+        >
+          <CalendarX2 size={16} aria-hidden="true" />
+          Bloquear horario
+        </Button>
         <Button onClick={() => openCreate()} disabled={!setupReady}>
           <CalendarPlus size={17} aria-hidden="true" />
           Nueva reserva
@@ -1155,7 +1827,7 @@ export function ReservasManager({
           total={totalCount}
           confirmed={totalConfirmedCount}
           pending={totalPendingCount}
-          cancelled={totalCancelledCount}
+          completed={totalCompletedCount}
           search={reservasSearch}
           onSearchChange={setReservasSearch}
           setupReady={setupReady}
@@ -1180,13 +1852,21 @@ export function ReservasManager({
             onCreate={() => openCreate({ fecha: dateInputValue(), hora: roundedTimeInputValue() })}
             onCopyPublicLink={copyPublicLink}
             onOpenDetail={setSelectedReserva}
-            onMarkAttendance={(reserva) => updateAsistencia(reserva, 'asistio')}
+            onComplete={(reserva) => updateEstado(reserva, 'completed')}
             onEvolucion={openEvolucion}
             onReschedule={openEdit}
           />
 
           <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_292px]">
             <div className="min-w-0 space-y-3">
+              <CalendarFiltersBar
+                filters={calendarFilters}
+                profesionales={profesionales}
+                servicios={servicios}
+                salas={salas}
+                canUseSharedCalendar={canUseSharedCalendar}
+                onChange={setCalendarFilters}
+              />
               <CalendarHeader
                 view={calendarView}
                 selectedDate={selectedDate}
@@ -1203,11 +1883,15 @@ export function ReservasManager({
 
               <CalendarView
                 reservas={reservasFiltradas}
+                bloqueos={bloqueosFiltrados}
                 view={calendarView}
                 selectedDate={selectedDate}
                 initialHorarios={initialHorarios}
+                demoMode={demoMode}
                 onOpenReserva={setSelectedReserva}
+                onOpenBlock={setSelectedBlock}
                 onCreateAtSlot={openCreate}
+                onBlockAtSlot={openBlockModal}
               />
             </div>
 
@@ -1217,7 +1901,7 @@ export function ReservasManager({
                 total={todayCount}
                 confirmed={confirmedTodayCount}
                 pending={pendingTodayCount}
-                waiting={waitingTodayCount}
+                completed={completedTodayCount}
               />
               <TodayAgendaPanel
                 reservas={todayReservas}
@@ -1240,19 +1924,22 @@ export function ReservasManager({
           )}
           onClose={() => setSelectedReserva(null)}
           onEdit={openEdit}
-          onWait={(reserva) => updateEstado(reserva, 'en_espera')}
-          onComplete={(reserva) => updateEstado(reserva, 'completada')}
-          onNoShow={(reserva) => updateAsistencia(reserva, 'no_asistio')}
-          onCancel={(reserva) => updateEstado(reserva, 'cancelada')}
+          onConfirm={(reserva) => updateEstado(reserva, 'confirmed')}
+          onComplete={(reserva) => updateEstado(reserva, 'completed')}
+          onNoShow={(reserva) => updateEstado(reserva, 'no_show')}
+          onCancel={(reserva) => updateEstado(reserva, 'cancelled')}
           onReschedule={openEdit}
           onEvolucion={openEvolucion}
-          onReminder={() =>
-            setFeedback({
-              type: 'error',
-              message:
-                'Los recordatorios por WhatsApp todavía no están configurados en esta demo.',
-            })
-          }
+          onReminder={sendForcedEmailReminder}
+        />
+      )}
+
+      {selectedBlock && (
+        <AgendaBlockDetailsPanel
+          block={selectedBlock}
+          isPending={isPending && pendingReservaId === selectedBlock.id}
+          onClose={() => setSelectedBlock(null)}
+          onDelete={deleteBlock}
         />
       )}
 
@@ -1328,13 +2015,13 @@ export function ReservasManager({
               </Field>
             </div>
 
-            {creatingNewPaciente && (
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-4">
-                <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-700">
-                  <UserRound size={16} aria-hidden="true" />
-                  Nuevo paciente
-                </div>
-                <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 p-4">
+              <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-700">
+                <UserRound size={16} aria-hidden="true" />
+                {creatingNewPaciente ? 'Nuevo paciente' : 'Contacto del paciente'}
+              </div>
+              {creatingNewPaciente && (
+                <div className="mb-4">
                   <Field
                     label="Nombre"
                     error={form.formState.errors.paciente_nombre?.message}
@@ -1349,39 +2036,41 @@ export function ReservasManager({
                       {...form.register('paciente_nombre')}
                     />
                   </Field>
-                  <Field
-                    label="Email"
-                    error={form.formState.errors.paciente_email?.message}
-                  >
-                    <input
-                      type="email"
-                      placeholder="paciente@correo.cl"
-                      className="agendix-input"
-                      aria-invalid={
-                        form.formState.errors.paciente_email ? 'true' : 'false'
-                      }
-                      {...form.register('paciente_email')}
-                    />
-                  </Field>
-                  <Field
-                    label="Teléfono"
-                    error={form.formState.errors.paciente_telefono?.message}
-                  >
-                    <input
-                      type="tel"
-                      placeholder="+56 9 5000 1000"
-                      className="agendix-input"
-                      aria-invalid={
-                        form.formState.errors.paciente_telefono ? 'true' : 'false'
-                      }
-                      {...form.register('paciente_telefono')}
-                    />
-                  </Field>
                 </div>
+              )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Email"
+                  error={form.formState.errors.paciente_email?.message}
+                >
+                  <input
+                    type="email"
+                    placeholder="paciente@correo.cl"
+                    className="agendix-input"
+                    aria-invalid={
+                      form.formState.errors.paciente_email ? 'true' : 'false'
+                    }
+                    {...form.register('paciente_email')}
+                  />
+                </Field>
+                <Field
+                  label="Teléfono"
+                  error={form.formState.errors.paciente_telefono?.message}
+                >
+                  <input
+                    type="tel"
+                    placeholder="+56 9 5000 1000"
+                    className="agendix-input"
+                    aria-invalid={
+                      form.formState.errors.paciente_telefono ? 'true' : 'false'
+                    }
+                    {...form.register('paciente_telefono')}
+                  />
+                </Field>
               </div>
-            )}
+            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Fecha" error={form.formState.errors.fecha?.message}>
                 <input
                   type="date"
@@ -1394,40 +2083,37 @@ export function ReservasManager({
                 <input
                   type="time"
                   step={900}
+                  lang="es-CL"
+                  pattern="[0-9]{2}:[0-9]{2}"
                   className="agendix-input"
                   aria-invalid={form.formState.errors.hora ? 'true' : 'false'}
                   {...form.register('hora')}
                 />
               </Field>
               <Field label="Estado" error={form.formState.errors.estado?.message}>
-                <select className="agendix-select" {...form.register('estado')}>
-                  {reservaEstados.map((estado) => (
-                    <option key={estado} value={estado}>
-                      {reservaEstadoLabels[estado]}
-                    </option>
-                  ))}
-                </select>
+                {modal.mode === 'edit' ? (
+                  <select className="agendix-select" {...form.register('estado')}>
+                    {reservaEstados.map((estado) => (
+                      <option key={estado} value={estado}>
+                        {reservaEstadoLabels[estado]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <input type="hidden" {...form.register('estado')} />
+                    <div className="flex h-11 items-center rounded-xl border border-amber-200/70 bg-amber-50 px-3 text-sm font-semibold text-amber-700">
+                      Pendiente
+                    </div>
+                  </>
+                )}
               </Field>
-              <Field
-                label="Asistencia"
-                error={form.formState.errors.estado_asistencia?.message}
-              >
-                <select
-                  className="agendix-select"
-                  {...form.register('estado_asistencia')}
-                >
-                  {asistenciaEstados.map((estadoAsistencia) => (
-                    <option key={estadoAsistencia} value={estadoAsistencia}>
-                      {asistenciaLabels[estadoAsistencia]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <input type="hidden" {...form.register('estado_asistencia')} />
             </div>
 
-            {selectedService && (
+            {selectedService && selectedDurationMinutes > 0 && (
               <div className="rounded-xl border border-slate-200/70 bg-slate-50/60 px-3 py-2 text-sm text-slate-500">
-                Duración estimada: {selectedService.duracion_minutos} min
+                Duración estimada: {selectedDurationMinutes} min
               </div>
             )}
 
@@ -1439,6 +2125,30 @@ export function ReservasManager({
                 aria-invalid={form.formState.errors.notas ? 'true' : 'false'}
                 {...form.register('notas')}
               />
+            </Field>
+
+            <Field
+              label="Enlace Zoom o Google Meet"
+              error={form.formState.errors.meeting_url?.message}
+            >
+              <div className="space-y-2">
+                <input
+                  type="url"
+                  placeholder="https://meet.google.com/abc-defg-hij"
+                  className="agendix-input"
+                  aria-invalid={
+                    form.formState.errors.meeting_url ? 'true' : 'false'
+                  }
+                  disabled={!canUseMeetingLinks}
+                  {...form.register('meeting_url')}
+                />
+                {!canUseMeetingLinks && (
+                  <p className="rounded-lg border border-orange-200/70 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
+                    Disponible desde Agendix Center Pro para guardar enlaces de
+                    telemedicina manuales.
+                  </p>
+                )}
+              </div>
             </Field>
 
             <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
@@ -1457,11 +2167,121 @@ export function ReservasManager({
         </FormModal>
       )}
 
+      {blockModal && (
+        <FormModal
+          title="Bloquear horario"
+          description="Cierra un bloque para el centro completo o para un profesional específico."
+          onClose={closeBlockModal}
+        >
+          <form onSubmit={onSubmitBlock} className="space-y-5 px-5 py-5" noValidate>
+            <Field label="Alcance" error={blockForm.formState.errors.scope?.message}>
+              <div className="grid grid-cols-2 rounded-xl border border-slate-200/70 bg-slate-50/80 p-1">
+                {([
+                  ['centro', 'Centro completo'],
+                  ['profesional', 'Profesional'],
+                ] as [AgendaBlockScope, string][]).map(([scope, label]) => (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() => blockForm.setValue('scope', scope)}
+                    className={`h-9 rounded-lg px-2 text-sm font-semibold transition ${
+                      blockScope === scope
+                        ? 'bg-[#22211F] text-white shadow-sm shadow-slate-950/15'
+                        : 'text-slate-500 hover:text-orange-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <input type="hidden" {...blockForm.register('scope')} />
+            </Field>
+
+            {blockScope === 'profesional' && (
+              <Field
+                label="Profesional"
+                error={blockForm.formState.errors.profesional_id?.message}
+              >
+                <select
+                  className="agendix-select"
+                  aria-invalid={
+                    blockForm.formState.errors.profesional_id ? 'true' : 'false'
+                  }
+                  {...blockForm.register('profesional_id')}
+                >
+                  <option value="">Seleccionar profesional</option>
+                  {profesionales.map((profesional) => (
+                    <option key={profesional.id} value={profesional.id}>
+                      {profesional.nombre}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Fecha" error={blockForm.formState.errors.fecha?.message}>
+                <input
+                  type="date"
+                  className="agendix-input"
+                  aria-invalid={blockForm.formState.errors.fecha ? 'true' : 'false'}
+                  {...blockForm.register('fecha')}
+                />
+              </Field>
+              <Field
+                label="Inicio"
+                error={blockForm.formState.errors.hora_inicio?.message}
+              >
+                <input
+                  type="time"
+                  step={900}
+                  lang="es-CL"
+                  className="agendix-input"
+                  aria-invalid={
+                    blockForm.formState.errors.hora_inicio ? 'true' : 'false'
+                  }
+                  {...blockForm.register('hora_inicio')}
+                />
+              </Field>
+              <Field label="Término" error={blockForm.formState.errors.hora_fin?.message}>
+                <input
+                  type="time"
+                  step={900}
+                  lang="es-CL"
+                  className="agendix-input"
+                  aria-invalid={
+                    blockForm.formState.errors.hora_fin ? 'true' : 'false'
+                  }
+                  {...blockForm.register('hora_fin')}
+                />
+              </Field>
+            </div>
+
+            <Field label="Motivo" error={blockForm.formState.errors.motivo?.message}>
+              <textarea
+                rows={3}
+                placeholder="Reunión, capacitación, trámite, feriado interno"
+                className="agendix-input min-h-24 resize-none"
+                aria-invalid={blockForm.formState.errors.motivo ? 'true' : 'false'}
+                {...blockForm.register('motivo')}
+              />
+            </Field>
+
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" onClick={closeBlockModal}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? 'Bloqueando...' : 'Bloquear horario'}
+              </Button>
+            </div>
+          </form>
+        </FormModal>
+      )}
+
       {evolucionModal && (
         <FormModal
-          title={
-            evolucionModal.evolucion ? 'Ver evolución' : 'Agregar evolución'
-          }
+          title="Ficha clínica"
           description={`${patientName(evolucionModal.reserva.paciente)} · ${formatTimeRange(
             evolucionModal.reserva
           )}`}
@@ -1475,13 +2295,13 @@ export function ReservasManager({
             <input type="hidden" {...evolucionForm.register('reserva_id')} />
 
             <Field
-              label="Evolución de sesión"
+              label="Historia clínica"
               error={evolucionForm.formState.errors.texto_evolucion?.message}
             >
               <textarea
-                rows={5}
-                placeholder="Registra lo trabajado, hallazgos relevantes y respuesta del paciente"
-                className="agendix-input min-h-36 resize-none"
+                rows={7}
+                placeholder="Escribe la ficha clínica con el detalle que necesites"
+                className="agendix-input min-h-44 resize-y"
                 aria-invalid={
                   evolucionForm.formState.errors.texto_evolucion
                     ? 'true'
@@ -1492,13 +2312,13 @@ export function ReservasManager({
             </Field>
 
             <Field
-              label="Próximos pasos"
+              label="Tratamiento"
               error={evolucionForm.formState.errors.proximos_pasos?.message}
             >
               <textarea
                 rows={3}
-                placeholder="Indicaciones, tareas, objetivos o plan para la próxima sesión"
-                className="agendix-input min-h-24 resize-none"
+                placeholder="Indicaciones, plan, objetivos o seguimiento"
+                className="agendix-input min-h-24 resize-y"
                 aria-invalid={
                   evolucionForm.formState.errors.proximos_pasos
                     ? 'true'
@@ -1509,15 +2329,15 @@ export function ReservasManager({
             </Field>
 
             <Field
-              label="Observaciones privadas"
+              label="Antecedentes / Configuración"
               error={
                 evolucionForm.formState.errors.observaciones_privadas?.message
               }
             >
               <textarea
                 rows={3}
-                placeholder="Notas internas sensibles visibles para el equipo clínico"
-                className="agendix-input min-h-24 resize-none"
+                placeholder="Antecedentes, observaciones internas o configuración del caso"
+                className="agendix-input min-h-24 resize-y"
                 aria-invalid={
                   evolucionForm.formState.errors.observaciones_privadas
                     ? 'true'
@@ -1532,7 +2352,7 @@ export function ReservasManager({
                 Cancelar
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? 'Guardando...' : 'Guardar evolución'}
+                {isPending ? 'Guardando...' : 'Guardar'}
               </Button>
             </div>
           </form>
@@ -1563,7 +2383,7 @@ function formatWeekday(date: Date) {
   return normalizeIntlText(
     new Intl.DateTimeFormat('es-CL', {
       weekday: 'short',
-      timeZone: chileTimeZone,
+      timeZone: appTimeZone,
     }).format(date)
   )
 }
@@ -1573,7 +2393,7 @@ function formatShortDate(date: Date) {
     new Intl.DateTimeFormat('es-CL', {
       day: '2-digit',
       month: 'short',
-      timeZone: chileTimeZone,
+      timeZone: appTimeZone,
     }).format(date)
   )
 }
@@ -1581,7 +2401,7 @@ function formatShortDate(date: Date) {
 function getDayOfMonth(date: Date) {
   return new Intl.DateTimeFormat('es-CL', {
     day: 'numeric',
-    timeZone: chileTimeZone,
+    timeZone: appTimeZone,
   }).format(date)
 }
 
@@ -1590,7 +2410,7 @@ function formatMonthLabel(date: Date) {
     new Intl.DateTimeFormat('es-CL', {
       month: 'long',
       year: 'numeric',
-      timeZone: chileTimeZone,
+      timeZone: appTimeZone,
     }).format(date)
   )
 }
@@ -1603,7 +2423,7 @@ function reservationMinutes(reserva: ReservaListItem) {
 }
 
 function shiftDateValue(value: string, view: CalendarView, direction: -1 | 1) {
-  const date = value ? new Date(`${value}T00:00:00`) : new Date()
+  const date = value ? dateFromInput(value) : new Date()
 
   if (view === 'dia') {
     date.setDate(date.getDate() + direction)
@@ -1624,8 +2444,33 @@ function hourLabel(hour: number) {
   return `${pad(hour)}:00`
 }
 
+function minutesToClock(totalMinutes: number) {
+  const minutes = Math.max(0, Math.min(23 * 60 + 59, totalMinutes))
+
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`
+}
+
+function blockOverlapsMinutes(
+  block: AgendaBlockListItem,
+  dayKey: string,
+  startMinutes: number,
+  endMinutes: number
+) {
+  const start = zonedDateTime(dayKey, minutesToClock(startMinutes))
+  const end = zonedDateTime(dayKey, minutesToClock(endMinutes))
+
+  return new Date(block.fecha_inicio) < end && new Date(block.fecha_fin) > start
+}
+
+function blockStartsInHour(block: AgendaBlockListItem, hour: number) {
+  return zonedHour(block.fecha_inicio) === hour
+}
+
+function blockScopeLabel(block: AgendaBlockListItem) {
+  return block.profesional?.nombre ?? 'Centro completo'
+}
+
 function appointmentStatusLabel(reserva: ReservaListItem) {
-  if (reserva.estado_asistencia === 'no_asistio') return 'No se presenta'
   return reservaEstadoLabels[reserva.estado]
 }
 
@@ -1633,16 +2478,27 @@ function sessionLabel(count: number) {
   return `${count} ${count === 1 ? 'sesión' : 'sesiones'}`
 }
 
+function meetingLabel(url?: string | null) {
+  if (!url) return 'Sin enlace'
+
+  const provider = detectMeetingProvider(url)
+
+  if (provider === 'google_meet') return 'Google Meet'
+  if (provider === 'zoom') return 'Zoom'
+
+  return 'Enlace externo'
+}
+
 function appointmentStateClasses(reserva: ReservaListItem) {
-  if (reserva.estado_asistencia === 'no_asistio') {
+  if (reserva.estado === 'no_show') {
     return {
-      card: 'border-red-100 bg-red-50/60 text-red-900 hover:border-red-200',
-      accent: 'bg-red-400',
-      soft: 'bg-red-100 text-red-700',
+      card: 'border-rose-100 bg-rose-50/70 text-rose-900 hover:border-rose-200',
+      accent: 'bg-rose-500',
+      soft: 'bg-rose-100 text-rose-700',
     }
   }
 
-  if (reserva.estado === 'confirmada') {
+  if (reserva.estado === 'confirmed') {
     return {
       card: 'border-emerald-100 bg-emerald-50/60 text-emerald-900 hover:border-emerald-200',
       accent: 'bg-emerald-400',
@@ -1650,23 +2506,15 @@ function appointmentStateClasses(reserva: ReservaListItem) {
     }
   }
 
-  if (reserva.estado === 'en_espera') {
+  if (reserva.estado === 'cancelled') {
     return {
-      card: 'border-sky-100 bg-sky-50/70 text-sky-900 hover:border-sky-200',
-      accent: 'bg-sky-500',
-      soft: 'bg-sky-100 text-sky-700',
+      card: 'border-red-100 bg-red-50/70 text-red-900 hover:border-red-200',
+      accent: 'bg-red-400',
+      soft: 'bg-red-100 text-red-700',
     }
   }
 
-  if (reserva.estado === 'cancelada') {
-    return {
-      card: 'border-slate-200 bg-slate-50 text-slate-400 opacity-70 hover:border-slate-300',
-      accent: 'bg-slate-300',
-      soft: 'bg-slate-100 text-slate-500',
-    }
-  }
-
-  if (reserva.estado === 'completada') {
+  if (reserva.estado === 'completed') {
     return {
       card: 'border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300',
       accent: 'bg-slate-400',
@@ -1674,7 +2522,6 @@ function appointmentStateClasses(reserva: ReservaListItem) {
     }
   }
 
-  // pendiente — ámbar suave
   return {
     card: 'border-amber-100 bg-amber-50/60 text-amber-900 hover:border-amber-200',
     accent: 'bg-amber-400',
@@ -1699,7 +2546,7 @@ function CalendarHeader({
   onPrevious: () => void
   onNext: () => void
 }) {
-  const selected = selectedDate ? new Date(`${selectedDate}T00:00:00`) : new Date()
+  const selected = selectedDate ? dateFromInput(selectedDate) : new Date()
   const rangeLabel =
     view === 'dia'
       ? formatShortDate(selected)
@@ -1772,44 +2619,157 @@ function CalendarHeader({
   )
 }
 
+function CalendarFiltersBar({
+  filters,
+  profesionales,
+  servicios,
+  salas,
+  canUseSharedCalendar,
+  onChange,
+}: {
+  filters: CalendarFiltersState
+  profesionales: ReservaProfesionalOption[]
+  servicios: ReservaServicioOption[]
+  salas: ReservaSalaOption[]
+  canUseSharedCalendar: boolean
+  onChange: (filters: CalendarFiltersState) => void
+}) {
+  const updateFilter = <Key extends keyof CalendarFiltersState>(
+    key: Key,
+    value: CalendarFiltersState[Key]
+  ) => {
+    onChange({ ...filters, [key]: value })
+  }
+
+  return (
+    <section className="agendix-surface rounded-2xl p-4">
+      <div className="grid gap-3 md:grid-cols-4">
+        <Field label="Profesional">
+          <select
+            className="agendix-select"
+            value={filters.profesionalId}
+            disabled={!canUseSharedCalendar}
+            onChange={(event) => updateFilter('profesionalId', event.target.value)}
+          >
+            <option value="">
+              {canUseSharedCalendar ? 'Todos los profesionales' : 'Agenda individual'}
+            </option>
+            {profesionales.map((profesional) => (
+              <option key={profesional.id} value={profesional.id}>
+                {profesional.nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Servicio">
+          <select
+            className="agendix-select"
+            value={filters.servicioId}
+            onChange={(event) => updateFilter('servicioId', event.target.value)}
+          >
+            <option value="">Todos los servicios</option>
+            {servicios.map((servicio) => (
+              <option key={servicio.id} value={servicio.id}>
+                {servicio.nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Sala">
+          <select
+            className="agendix-select"
+            value={filters.salaId}
+            onChange={(event) => updateFilter('salaId', event.target.value)}
+          >
+            <option value="">Todas las salas</option>
+            {salas.map((sala) => (
+              <option key={sala.id} value={sala.id}>
+                {sala.nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Estado">
+          <select
+            className="agendix-select"
+            value={filters.estado}
+            onChange={(event) =>
+              updateFilter('estado', event.target.value as CalendarFiltersState['estado'])
+            }
+          >
+            <option value="todos">Todos los estados</option>
+            {reservaEstados.map((estado) => (
+              <option key={estado} value={estado}>
+                {reservaEstadoLabels[estado]}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      {!canUseSharedCalendar && (
+        <p className="mt-3 rounded-xl border border-orange-200/70 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
+          La agenda compartida y la gestión de múltiples agendas están
+          disponibles desde Agendix Center.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function CalendarView({
   reservas,
+  bloqueos,
   view,
   selectedDate,
   initialHorarios,
+  demoMode,
   onOpenReserva,
+  onOpenBlock,
   onCreateAtSlot,
+  onBlockAtSlot,
 }: {
   reservas: ReservaListItem[]
+  bloqueos: AgendaBlockListItem[]
   view: CalendarView
   selectedDate: string
   initialHorarios: HorarioCentro[]
+  demoMode: boolean
   onOpenReserva: (reserva: ReservaListItem) => void
+  onOpenBlock: (block: AgendaBlockListItem) => void
   onCreateAtSlot: (slot: SlotSelection) => void
+  onBlockAtSlot: (slot: SlotSelection) => void
 }) {
-  const [horarios, setHorarios] = useState<HorarioCentro[]>(() =>
-    normalizeHorarios(initialHorarios)
+  const normalizedInitialHorarios = useMemo(
+    () => normalizeHorarios(initialHorarios),
+    [initialHorarios]
   )
-  const selected = selectedDate
-    ? new Date(`${selectedDate}T00:00:00`)
-    : new Date()
+  const [horarios, setHorarios] = useState<HorarioCentro[]>(normalizedInitialHorarios)
+  const selected = selectedDate ? dateFromInput(selectedDate) : new Date()
   const selectedMonth = selectedDate.slice(0, 7)
   const visibleDays = useMemo(() => {
-    const selected = selectedDate
-      ? new Date(`${selectedDate}T00:00:00`)
-      : new Date()
+    const selected = selectedDate ? dateFromInput(selectedDate) : new Date()
     const firstDay =
       view === 'dia'
         ? selected
         : view === 'semana'
           ? startOfWeek(selected)
           : startOfWeek(new Date(selected.getFullYear(), selected.getMonth(), 1))
-    const length = view === 'dia' ? 1 : view === 'semana' ? 6 : 42
+    const length = view === 'dia' ? 1 : view === 'semana' ? 7 : 42
 
     return Array.from({ length }, (_, index) => addDays(firstDay, index))
   }, [selectedDate, view])
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setHorarios(normalizedInitialHorarios)
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [normalizedInitialHorarios])
+
+  useEffect(() => {
+    if (!demoMode) return
+
     let storedHorarios: HorarioCentro[] | null = null
 
     migrateLegacyAgendixStorage()
@@ -1827,9 +2787,11 @@ function CalendarView({
     }
 
     window.setTimeout(() => {
-      setHorarios(storedHorarios ?? normalizeHorarios(initialHorarios))
+      if (storedHorarios) {
+        setHorarios(storedHorarios)
+      }
     }, 0)
-  }, [initialHorarios])
+  }, [demoMode])
 
   const hourSlots = useMemo(() => {
     const activeHours = visibleDays.flatMap((day) => {
@@ -1848,8 +2810,18 @@ function CalendarView({
   }, [horarios, visibleDays])
 
   const selectedDayReservas = reservas.filter(
-    (reserva) => dateKey(reserva.fecha_inicio) === dateKey(selected.toISOString())
+    (reserva) => dateKey(reserva.fecha_inicio) === selectedDate
   )
+  const selectedDayBlocks = bloqueos.filter(
+    (block) => dateKey(block.fecha_inicio) === selectedDate
+  )
+  const pendingCount = reservas.filter((reserva) => reserva.estado === 'pending').length
+  const confirmedCount = reservas.filter(
+    (reserva) => reserva.estado === 'confirmed'
+  ).length
+  const completedCount = reservas.filter(
+    (reserva) => reserva.estado === 'completed'
+  ).length
 
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm shadow-slate-900/[0.04]">
@@ -1867,19 +2839,14 @@ function CalendarView({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-1.5 text-xs font-medium sm:flex sm:flex-wrap sm:justify-end">
+        <div className="grid grid-cols-2 gap-1.5 text-xs font-medium sm:flex sm:flex-wrap sm:items-center sm:justify-end">
           <span className="whitespace-nowrap rounded-full bg-slate-50 px-2.5 py-1 text-center text-slate-500 ring-1 ring-slate-200/80">
             {sessionLabel(reservas.length)}
           </span>
-          <span className="whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-center text-emerald-700 ring-1 ring-emerald-200/60">
-            Confirmadas
-          </span>
-          <span className="whitespace-nowrap rounded-full bg-amber-50 px-2.5 py-1 text-center text-amber-700 ring-1 ring-amber-200/60">
-            Reservadas
-          </span>
-          <span className="whitespace-nowrap rounded-full bg-sky-50 px-2.5 py-1 text-center text-sky-700 ring-1 ring-sky-200/60">
-            En espera
-          </span>
+          <StatusSummaryChip label="Pendientes" value={pendingCount} tone="amber" />
+          <StatusSummaryChip label="Confirmadas" value={confirmedCount} tone="green" />
+          <StatusSummaryChip label="Completadas" value={completedCount} tone="slate" />
+          <ReservationStatusHelp />
         </div>
       </div>
 
@@ -1889,9 +2856,12 @@ function CalendarView({
             date={selected}
             hourSlots={hourSlots}
             reservas={selectedDayReservas}
+            bloqueos={selectedDayBlocks}
             horarios={horarios}
             onOpenReserva={onOpenReserva}
+            onOpenBlock={onOpenBlock}
             onCreateAtSlot={onCreateAtSlot}
+            onBlockAtSlot={onBlockAtSlot}
           />
         ) : (
           <MobileAgendaList
@@ -1899,9 +2869,12 @@ function CalendarView({
             selectedMonth={selectedMonth}
             view={view}
             reservas={reservas}
+            bloqueos={bloqueos}
             horarios={horarios}
             onOpenReserva={onOpenReserva}
+            onOpenBlock={onOpenBlock}
             onCreateAtSlot={onCreateAtSlot}
+            onBlockAtSlot={onBlockAtSlot}
           />
         )}
       </div>
@@ -1912,17 +2885,23 @@ function CalendarView({
             days={visibleDays}
             selectedMonth={selectedMonth}
             reservas={reservas}
+            bloqueos={bloqueos}
             onOpenReserva={onOpenReserva}
+            onOpenBlock={onOpenBlock}
             onCreateAtSlot={onCreateAtSlot}
+            onBlockAtSlot={onBlockAtSlot}
           />
         ) : (
           <WeekCalendar
             days={visibleDays}
             hourSlots={hourSlots}
             reservas={reservas}
+            bloqueos={bloqueos}
             horarios={horarios}
             onOpenReserva={onOpenReserva}
+            onOpenBlock={onOpenBlock}
             onCreateAtSlot={onCreateAtSlot}
+            onBlockAtSlot={onBlockAtSlot}
           />
         )}
       </div>
@@ -1930,22 +2909,78 @@ function CalendarView({
   )
 }
 
+function StatusSummaryChip({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: 'amber' | 'green' | 'slate'
+}) {
+  const tones = {
+    amber: 'bg-amber-50 text-amber-700 ring-amber-200/60',
+    green: 'bg-emerald-50 text-emerald-700 ring-emerald-200/60',
+    slate: 'bg-slate-50 text-slate-600 ring-slate-200/80',
+  }
+
+  return (
+    <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-center ring-1 ${tones[tone]}`}>
+      {value} {label}
+    </span>
+  )
+}
+
+function ReservationStatusHelp() {
+  return (
+    <details className="relative col-span-2 justify-self-end sm:col-span-1">
+      <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 [&::-webkit-details-marker]:hidden">
+        <Info size={14} aria-hidden="true" />
+        <span className="sr-only">Ver estados de reservas</span>
+      </summary>
+      <div className="absolute right-0 top-9 z-20 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-xl shadow-slate-900/10">
+        <p className="text-sm font-semibold text-slate-900">
+          Estados de las reservas
+        </p>
+        <div className="mt-3 space-y-3">
+          {reservaEstados.map((estado) => (
+            <div key={estado} className="grid gap-1">
+              <Badge tone={estadoTone(estado)} className="w-fit">
+                {reservaEstadoLabels[estado]}
+              </Badge>
+              <p className="text-xs leading-5 text-slate-500">
+                {reservaEstadoDescriptions[estado]}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </details>
+  )
+}
+
 function WeekCalendar({
   days,
   hourSlots,
   reservas,
+  bloqueos,
   horarios,
   onOpenReserva,
+  onOpenBlock,
   onCreateAtSlot,
+  onBlockAtSlot,
 }: {
   days: Date[]
   hourSlots: number[]
   reservas: ReservaListItem[]
+  bloqueos: AgendaBlockListItem[]
   horarios: HorarioCentro[]
   onOpenReserva: (reserva: ReservaListItem) => void
+  onOpenBlock: (block: AgendaBlockListItem) => void
   onCreateAtSlot: (slot: SlotSelection) => void
+  onBlockAtSlot: (slot: SlotSelection) => void
 }) {
-  const todayKey = dateKey(new Date().toISOString())
+  const todayKey = dateKey()
   const cols = `56px repeat(${days.length}, minmax(0, 1fr))`
 
   return (
@@ -1958,7 +2993,7 @@ function WeekCalendar({
         >
           <div className="border-r border-slate-100 px-2 py-3 text-[11px] font-medium text-slate-400" />
           {days.map((day) => {
-            const dayKey = dateKey(day.toISOString())
+            const dayKey = dateInputValue(day)
             const isToday = dayKey === todayKey
             const dayReservas = reservas.filter(
               (r) => dateKey(r.fecha_inicio) === dayKey
@@ -2002,7 +3037,7 @@ function WeekCalendar({
               {hourLabel(hour)}
             </div>
             {days.map((day) => {
-              const dayKey = dateKey(day.toISOString())
+              const dayKey = dateInputValue(day)
               const isToday = dayKey === todayKey
               const horario = getHorarioForDate(day, horarios)
               const hourStart = hour * 60
@@ -2017,13 +3052,22 @@ function WeekCalendar({
                 timeRangeOverlapsDescanso(horario, hourStart, hourEnd)
               const slotReservas = reservas
                 .filter((reserva) => {
-                  const startsAt = new Date(reserva.fecha_inicio)
-                  return dateKey(reserva.fecha_inicio) === dayKey && startsAt.getHours() === hour
+                  return dateKey(reserva.fecha_inicio) === dayKey && zonedHour(reserva.fecha_inicio) === hour
                 })
                 .sort(
                   (a, b) =>
                     new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
                 )
+              const slotBlocks = bloqueos
+                .filter((block) =>
+                  blockOverlapsMinutes(block, dayKey, hourStart, hourEnd)
+                )
+                .sort(
+                  (a, b) =>
+                    new Date(a.fecha_inicio).getTime() -
+                    new Date(b.fecha_inicio).getTime()
+                )
+              const hasCenterBlock = slotBlocks.some((block) => !block.profesional_id)
               const compactSlot = slotReservas.length > 2
 
               return (
@@ -2042,7 +3086,15 @@ function WeekCalendar({
                         compact={compactSlot}
                       />
                     ))}
-                    {isOpen && slotReservas.length === 0 && (
+                    {slotBlocks.map((block) => (
+                      <AgendaBlockCard
+                        key={`${block.id}-${dayKey}-${hour}`}
+                        block={block}
+                        onOpen={onOpenBlock}
+                        compact={!blockStartsInHour(block, hour)}
+                      />
+                    ))}
+                    {isOpen && slotReservas.length === 0 && !hasCenterBlock && (
                       <button
                         type="button"
                         onClick={() =>
@@ -2053,7 +3105,18 @@ function WeekCalendar({
                         +
                       </button>
                     )}
-                    {!isOpen && slotReservas.length === 0 && (
+                    {isOpen && slotReservas.length === 0 && hasCenterBlock && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onBlockAtSlot({ fecha: dayKey, hora: hourLabel(hour) })
+                        }
+                        className="flex min-h-11 w-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50 text-xs font-semibold text-rose-400 transition hover:border-rose-300 hover:bg-rose-100/70 hover:text-rose-600"
+                      >
+                        Bloqueado
+                      </button>
+                    )}
+                    {!isOpen && slotReservas.length === 0 && slotBlocks.length === 0 && (
                       <div
                         className={`flex min-h-11 items-center justify-center rounded-lg text-[11px] ${
                           isBreak
@@ -2079,22 +3142,34 @@ function MonthCalendar({
   days,
   selectedMonth,
   reservas,
+  bloqueos,
   onOpenReserva,
+  onOpenBlock,
   onCreateAtSlot,
+  onBlockAtSlot,
 }: {
   days: Date[]
   selectedMonth: string
   reservas: ReservaListItem[]
+  bloqueos: AgendaBlockListItem[]
   onOpenReserva: (reserva: ReservaListItem) => void
+  onOpenBlock: (block: AgendaBlockListItem) => void
   onCreateAtSlot: (slot: SlotSelection) => void
+  onBlockAtSlot: (slot: SlotSelection) => void
 }) {
   return (
     <div className="grid grid-cols-7 gap-px bg-slate-100 p-px">
       {days.map((day) => {
-        const dayKey = dateKey(day.toISOString())
+        const dayKey = dateInputValue(day)
         const isOutsideMonth = !dayKey.startsWith(selectedMonth)
         const dayReservas = reservas
           .filter((reserva) => dateKey(reserva.fecha_inicio) === dayKey)
+          .sort(
+            (a, b) =>
+              new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
+          )
+        const dayBlocks = bloqueos
+          .filter((block) => dateKey(block.fecha_inicio) === dayKey)
           .sort(
             (a, b) =>
               new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
@@ -2124,18 +3199,35 @@ function MonthCalendar({
                   compact
                 />
               ))}
-              {dayReservas.length > 3 && (
+              {dayBlocks.slice(0, Math.max(0, 3 - dayReservas.length)).map((block) => (
+                <AgendaBlockCard
+                  key={block.id}
+                  block={block}
+                  onOpen={onOpenBlock}
+                  compact
+                />
+              ))}
+              {dayReservas.length + dayBlocks.length > 3 && (
                 <p className="px-2 text-xs font-semibold text-slate-500">
-                  +{dayReservas.length - 3} más
+                  +{dayReservas.length + dayBlocks.length - 3} más
                 </p>
               )}
-              {dayReservas.length === 0 && (
+              {dayReservas.length === 0 && dayBlocks.length === 0 && (
                 <button
                   type="button"
                   onClick={() => onCreateAtSlot({ fecha: dayKey, hora: '09:00' })}
                   className="mt-3 flex min-h-16 w-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs font-semibold text-slate-400 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                 >
                   Libre
+                </button>
+              )}
+              {dayReservas.length === 0 && dayBlocks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onBlockAtSlot({ fecha: dayKey, hora: '09:00' })}
+                  className="mt-2 flex min-h-10 w-full items-center justify-center rounded-lg border border-dashed border-rose-200 text-xs font-semibold text-rose-400 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+                >
+                  Añadir bloqueo
                 </button>
               )}
             </div>
@@ -2150,18 +3242,24 @@ function MobileDayTimeline({
   date,
   hourSlots,
   reservas,
+  bloqueos,
   horarios,
   onOpenReserva,
+  onOpenBlock,
   onCreateAtSlot,
+  onBlockAtSlot,
 }: {
   date: Date
   hourSlots: number[]
   reservas: ReservaListItem[]
+  bloqueos: AgendaBlockListItem[]
   horarios: HorarioCentro[]
   onOpenReserva: (reserva: ReservaListItem) => void
+  onOpenBlock: (block: AgendaBlockListItem) => void
   onCreateAtSlot: (slot: SlotSelection) => void
+  onBlockAtSlot: (slot: SlotSelection) => void
 }) {
-  const dayKey = dateKey(date.toISOString())
+  const dayKey = dateInputValue(date)
   const horario = getHorarioForDate(date, horarios)
 
   return (
@@ -2176,19 +3274,26 @@ function MobileDayTimeline({
       </div>
       {hourSlots.map((hour) => {
         const slotReservas = reservas.filter((reserva) => {
-          const startsAt = new Date(reserva.fecha_inicio)
-          return startsAt.getHours() === hour
+          return zonedHour(reserva.fecha_inicio) === hour
         })
-        const hourStart = hour * 60
-        const hourEnd = hourStart + 60
+        const slotBlocks = bloqueos
+          .filter((block) =>
+            blockOverlapsMinutes(block, dayKey, hour * 60, hour * 60 + 60)
+          )
+          .sort(
+            (a, b) =>
+              new Date(a.fecha_inicio).getTime() -
+              new Date(b.fecha_inicio).getTime()
+          )
+        const hasCenterBlock = slotBlocks.some((block) => !block.profesional_id)
         const isOpen =
           !!horario?.activo &&
-          hourStart >= timeToMinutes(horario.inicio) &&
-          hourStart < timeToMinutes(horario.fin) &&
-          !timeRangeOverlapsDescanso(horario, hourStart, hourEnd)
+          hour * 60 >= timeToMinutes(horario.inicio) &&
+          hour * 60 < timeToMinutes(horario.fin) &&
+          !timeRangeOverlapsDescanso(horario, hour * 60, hour * 60 + 60)
         const isBreak =
           !!horario?.activo &&
-          timeRangeOverlapsDescanso(horario, hourStart, hourEnd)
+          timeRangeOverlapsDescanso(horario, hour * 60, hour * 60 + 60)
 
         return (
           <div key={hour} className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
@@ -2203,7 +3308,15 @@ function MobileDayTimeline({
                   onOpen={onOpenReserva}
                 />
               ))}
-              {slotReservas.length === 0 && isOpen && (
+              {slotBlocks.map((block) => (
+                <AgendaBlockCard
+                  key={`${block.id}-${hour}`}
+                  block={block}
+                  onOpen={onOpenBlock}
+                  compact={!blockStartsInHour(block, hour)}
+                />
+              ))}
+              {slotReservas.length === 0 && isOpen && !hasCenterBlock && (
                 <button
                   type="button"
                   onClick={() => onCreateAtSlot({ fecha: dayKey, hora: hourLabel(hour) })}
@@ -2212,7 +3325,16 @@ function MobileDayTimeline({
                   Espacio disponible
                 </button>
               )}
-              {slotReservas.length === 0 && !isOpen && (
+              {slotReservas.length === 0 && isOpen && hasCenterBlock && (
+                <button
+                  type="button"
+                  onClick={() => onBlockAtSlot({ fecha: dayKey, hora: hourLabel(hour) })}
+                  className="flex min-h-14 w-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50 text-sm font-semibold text-rose-400 transition hover:border-rose-300 hover:bg-rose-100/70 hover:text-rose-600"
+                >
+                  Bloqueado
+                </button>
+              )}
+              {slotReservas.length === 0 && slotBlocks.length === 0 && !isOpen && (
                 <div
                   className={`flex min-h-14 items-center justify-center rounded-lg text-sm font-semibold ${
                     isBreak
@@ -2236,21 +3358,27 @@ function MobileAgendaList({
   selectedMonth,
   view,
   reservas,
+  bloqueos,
   horarios,
   onOpenReserva,
+  onOpenBlock,
   onCreateAtSlot,
+  onBlockAtSlot,
 }: {
   days: Date[]
   selectedMonth: string
   view: Exclude<CalendarView, 'dia'>
   reservas: ReservaListItem[]
+  bloqueos: AgendaBlockListItem[]
   horarios: HorarioCentro[]
   onOpenReserva: (reserva: ReservaListItem) => void
+  onOpenBlock: (block: AgendaBlockListItem) => void
   onCreateAtSlot: (slot: SlotSelection) => void
+  onBlockAtSlot: (slot: SlotSelection) => void
 }) {
   const visibleDays =
     view === 'mes'
-      ? days.filter((day) => dateKey(day.toISOString()).startsWith(selectedMonth))
+      ? days.filter((day) => dateInputValue(day).startsWith(selectedMonth))
       : days
 
   return (
@@ -2265,10 +3393,16 @@ function MobileAgendaList({
       </div>
 
       {visibleDays.map((day) => {
-        const dayKey = dateKey(day.toISOString())
+        const dayKey = dateInputValue(day)
         const horario = getHorarioForDate(day, horarios)
         const dayReservas = reservas
           .filter((reserva) => dateKey(reserva.fecha_inicio) === dayKey)
+          .sort(
+            (a, b) =>
+              new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
+          )
+        const dayBlocks = bloqueos
+          .filter((block) => dateKey(block.fecha_inicio) === dayKey)
           .sort(
             (a, b) =>
               new Date(a.fecha_inicio).getTime() - new Date(b.fecha_inicio).getTime()
@@ -2289,7 +3423,9 @@ function MobileAgendaList({
                   {formatShortDate(day)}
                 </h3>
               </div>
-              <Badge tone="slate">{sessionLabel(dayReservas.length)}</Badge>
+              <Badge tone="slate">
+                {dayReservas.length + dayBlocks.length} eventos
+              </Badge>
             </div>
 
             <div className="mt-3 space-y-2">
@@ -2300,8 +3436,15 @@ function MobileAgendaList({
                   onOpen={onOpenReserva}
                 />
               ))}
+              {dayBlocks.map((block) => (
+                <AgendaBlockCard
+                  key={block.id}
+                  block={block}
+                  onOpen={onOpenBlock}
+                />
+              ))}
 
-              {dayReservas.length === 0 && horario?.activo && (
+              {dayReservas.length === 0 && dayBlocks.length === 0 && horario?.activo && (
                 <button
                   type="button"
                   onClick={() => onCreateAtSlot({ fecha: dayKey, hora: suggestedHour })}
@@ -2311,7 +3454,17 @@ function MobileAgendaList({
                 </button>
               )}
 
-              {dayReservas.length === 0 && !horario?.activo && (
+              {dayReservas.length === 0 && dayBlocks.length > 0 && horario?.activo && (
+                <button
+                  type="button"
+                  onClick={() => onBlockAtSlot({ fecha: dayKey, hora: suggestedHour })}
+                  className="flex min-h-12 w-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-white text-sm font-semibold text-rose-400 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+                >
+                  Añadir bloqueo
+                </button>
+              )}
+
+              {dayReservas.length === 0 && dayBlocks.length === 0 && !horario?.activo && (
                 <div className="flex min-h-12 items-center justify-center rounded-lg bg-slate-50 text-sm font-semibold text-slate-300">
                   Centro cerrado
                 </div>
@@ -2351,18 +3504,55 @@ function AppointmentCard({
         </div>
         <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${state.accent}`} />
       </div>
-      {!compact && (
-        <>
-          <p className="mt-0.5 truncate text-[11px] text-slate-500">
-            {reserva.servicio.nombre}
+      <p className={`mt-0.5 truncate text-slate-500 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+        {reserva.servicio.nombre}
+      </p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <span className={`rounded-md px-1.5 py-0.5 font-semibold ${compact ? 'text-[10px]' : 'text-[11px]'} ${state.soft}`}>
+          {appointmentStatusLabel(reserva)}
+        </span>
+      </div>
+    </button>
+  )
+}
+
+function AgendaBlockCard({
+  block,
+  onOpen,
+  compact = false,
+}: {
+  block: AgendaBlockListItem
+  onOpen: (block: AgendaBlockListItem) => void
+  compact?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(block)}
+      className="relative w-full overflow-hidden rounded-xl border border-rose-100 bg-rose-50/70 p-2 pl-3 text-left text-rose-900 transition-all duration-150 hover:-translate-y-px hover:border-rose-200 hover:shadow-sm hover:shadow-slate-900/10"
+    >
+      <span className="absolute inset-y-0 left-0 w-[3px] rounded-r-full bg-rose-400" />
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold text-rose-500">
+            {formatBlockTimeRange(block)}
           </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${state.soft}`}>
-              {appointmentStatusLabel(reserva)}
-            </span>
-          </div>
-        </>
+          <p className="mt-0.5 truncate text-xs font-semibold">
+            {blockScopeLabel(block)}
+          </p>
+        </div>
+        <CalendarX2 size={14} className="mt-0.5 shrink-0 text-rose-400" aria-hidden="true" />
+      </div>
+      {!compact && block.motivo && (
+        <p className="mt-0.5 truncate text-[11px] text-rose-500">
+          {block.motivo}
+        </p>
       )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <span className="rounded-md bg-rose-100 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700">
+          Bloqueado
+        </span>
+      </div>
     </button>
   )
 }
@@ -2398,9 +3588,9 @@ function AgendaMetricCards({
       />
       <AgendaMetricCard
         icon={CheckCircle2}
-        label="Reservadas"
+        label="Pendientes"
         value={pending}
-        description="Reservas tomadas"
+        description="Requieren confirmación"
         tone="amber"
       />
       <AgendaMetricCard
@@ -2459,7 +3649,7 @@ function ReservationsManagementView({
   total,
   confirmed,
   pending,
-  cancelled,
+  completed,
   search,
   onSearchChange,
   setupReady,
@@ -2471,7 +3661,7 @@ function ReservationsManagementView({
   total: number
   confirmed: number
   pending: number
-  cancelled: number
+  completed: number
   search: string
   onSearchChange: (value: string) => void
   setupReady: boolean
@@ -2498,17 +3688,17 @@ function ReservationsManagementView({
         />
         <AgendaMetricCard
           icon={Clock3}
-          label="Reservadas"
+          label="Pendientes"
           value={pending}
-          description="Tomadas en agenda"
+          description="Requieren confirmación"
           tone="amber"
         />
         <AgendaMetricCard
-          icon={AlertCircle}
-          label="Canceladas"
-          value={cancelled}
-          description="No activas"
-          tone="red"
+          icon={FileText}
+          label="Completadas"
+          value={completed}
+          description="Sesiones cerradas"
+          tone="slate"
         />
       </section>
 
@@ -2610,11 +3800,6 @@ function ReservationDirectoryRow({
         <Badge tone={estadoTone(reserva.estado)}>
           {appointmentStatusLabel(reserva)}
         </Badge>
-        {reserva.estado_asistencia !== 'sin_marcar' && (
-          <Badge tone={reserva.estado_asistencia === 'asistio' ? 'green' : 'red'}>
-            {asistenciaLabels[reserva.estado_asistencia]}
-          </Badge>
-        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2 lg:w-[170px]">
@@ -2636,7 +3821,7 @@ function NextAttentionCard({
   onCreate,
   onCopyPublicLink,
   onOpenDetail,
-  onMarkAttendance,
+  onComplete,
   onEvolucion,
   onReschedule,
 }: {
@@ -2646,7 +3831,7 @@ function NextAttentionCard({
   onCreate: () => void
   onCopyPublicLink: () => void
   onOpenDetail: (reserva: ReservaListItem) => void
-  onMarkAttendance: (reserva: ReservaListItem) => void
+  onComplete: (reserva: ReservaListItem) => void
   onEvolucion: (reserva: ReservaListItem) => void
   onReschedule: (reserva: ReservaListItem) => void
 }) {
@@ -2706,42 +3891,39 @@ function NextAttentionCard({
             <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/20">
               {appointmentStatusLabel(nextReserva)}
             </span>
-            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/70 ring-1 ring-white/15">
-              {asistenciaLabels[nextReserva.estado_asistencia]}
-            </span>
           </div>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:w-[340px]">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:w-[420px]">
           <button
             type="button"
             onClick={() => onOpenDetail(nextReserva)}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-[#22211F] ring-1 ring-white/20 transition-all hover:bg-[#FFF4EF] active:bg-orange-50"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-[#22211F] ring-1 ring-white/20 transition-all hover:bg-[#FFF4EF] active:bg-orange-50 whitespace-nowrap"
           >
             <UserRound size={16} aria-hidden="true" />
             Ver paciente
           </button>
           <button
             type="button"
-            onClick={() => onMarkAttendance(nextReserva)}
+            onClick={() => onComplete(nextReserva)}
             disabled={isPending}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/15 transition-all hover:bg-white/20 active:bg-white/25 disabled:opacity-50"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white/10 px-5 text-sm font-semibold text-white ring-1 ring-white/15 transition-all hover:bg-white/20 active:bg-white/25 disabled:opacity-50 whitespace-nowrap"
           >
             <CheckCircle2 size={16} aria-hidden="true" />
-            Marcar asistencia
+            Completar atención
           </button>
           <button
             type="button"
             onClick={() => onEvolucion(nextReserva)}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/15 transition-all hover:bg-white/20 active:bg-white/25"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white/10 px-5 text-sm font-semibold text-white ring-1 ring-white/15 transition-all hover:bg-white/20 active:bg-white/25 whitespace-nowrap"
           >
             <FileText size={16} aria-hidden="true" />
-            Registrar evolución
+            Ficha clínica
           </button>
           <button
             type="button"
             onClick={() => onReschedule(nextReserva)}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/15 transition-all hover:bg-white/20 active:bg-white/25"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white/10 px-5 text-sm font-semibold text-white ring-1 ring-white/15 transition-all hover:bg-white/20 active:bg-white/25 whitespace-nowrap"
           >
             <Edit3 size={16} aria-hidden="true" />
             Reagendar
@@ -2757,13 +3939,13 @@ function TodaySummary({
   total,
   confirmed,
   pending,
-  waiting,
+  completed,
 }: {
   nextReserva?: ReservaListItem
   total: number
   confirmed: number
   pending: number
-  waiting: number
+  completed: number
 }) {
   return (
     <section className="agendix-surface rounded-2xl p-4">
@@ -2801,8 +3983,8 @@ function TodaySummary({
 
       <div className="mt-3 grid grid-cols-3 gap-2">
         <SummaryPill label="Confirmadas" value={confirmed} tone="green" />
-        <SummaryPill label="Reservadas" value={pending} tone="amber" />
-        <SummaryPill label="En espera" value={waiting} tone="blue" />
+        <SummaryPill label="Pendientes" value={pending} tone="amber" />
+        <SummaryPill label="Completadas" value={completed} tone="slate" />
       </div>
     </section>
   )
@@ -2815,13 +3997,13 @@ function SummaryPill({
 }: {
   label: string
   value: number
-  tone: 'green' | 'amber' | 'orange' | 'blue' | 'red'
+  tone: 'green' | 'amber' | 'orange' | 'slate' | 'red'
 }) {
   const tones = {
     green: 'bg-emerald-50 text-emerald-700 ring-emerald-200/60',
     amber: 'bg-amber-50 text-amber-700 ring-amber-200/60',
     orange: 'bg-amber-50 text-amber-700 ring-amber-200/60',
-    blue: 'bg-sky-50 text-sky-700 ring-sky-200/60',
+    slate: 'bg-slate-50 text-slate-600 ring-slate-200/80',
     red: 'bg-red-50 text-red-600 ring-red-200/60',
   }
 
@@ -2929,7 +4111,7 @@ function AppointmentDetailsPanel({
   hasEvolucion,
   onClose,
   onEdit,
-  onWait,
+  onConfirm,
   onComplete,
   onNoShow,
   onCancel,
@@ -2942,14 +4124,17 @@ function AppointmentDetailsPanel({
   hasEvolucion: boolean
   onClose: () => void
   onEdit: (reserva: ReservaListItem) => void
-  onWait: (reserva: ReservaListItem) => void
+  onConfirm: (reserva: ReservaListItem) => void
   onComplete: (reserva: ReservaListItem) => void
   onNoShow: (reserva: ReservaListItem) => void
   onCancel: (reserva: ReservaListItem) => void
   onReschedule: (reserva: ReservaListItem) => void
   onEvolucion: (reserva: ReservaListItem) => void
-  onReminder: () => void
+  onReminder: (reserva: ReservaListItem) => void
 }) {
+  const patientEmail = reserva.paciente.email?.trim() ?? ''
+  const canSendEmailReminder = patientEmail.length > 0
+
   return (
     <div className="agendix-modal-overlay fixed inset-0 z-50 bg-slate-950/20 backdrop-blur-sm">
       <aside className="agendix-panel-slide absolute bottom-0 right-0 top-0 flex w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl shadow-slate-950/15">
@@ -2979,9 +4164,6 @@ function AppointmentDetailsPanel({
             <Badge tone={estadoTone(reserva.estado)}>
               {appointmentStatusLabel(reserva)}
             </Badge>
-            <Badge tone={asistenciaTone(reserva.estado_asistencia)}>
-              {asistenciaLabels[reserva.estado_asistencia]}
-            </Badge>
           </div>
         </div>
 
@@ -2991,10 +4173,33 @@ function AppointmentDetailsPanel({
             <DetailRow label="Profesional" value={reserva.profesional.nombre} />
             <DetailRow label="Sala" value={reserva.sala.nombre} />
             <DetailRow
-              label="Contacto"
-              value={reserva.paciente.telefono || reserva.paciente.email || '—'}
+              label="Teléfono"
+              value={reserva.paciente.telefono || '—'}
+            />
+            <DetailRow
+              label="Email"
+              value={patientEmail || '—'}
+            />
+            <DetailRow
+              label="Telemedicina"
+              value={meetingLabel(reserva.meeting_url)}
             />
           </div>
+
+          {reserva.meeting_url && (
+            <a
+              href={reserva.meeting_url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-between gap-3 rounded-xl border border-sky-200/70 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <LinkIcon size={16} aria-hidden="true" className="shrink-0" />
+                <span className="truncate">{meetingLabel(reserva.meeting_url)}</span>
+              </span>
+              <ExternalLink size={15} aria-hidden="true" className="shrink-0" />
+            </a>
+          )}
 
           {reserva.notas && (
           <div className="rounded-xl border border-slate-200/70 p-4">
@@ -3008,8 +4213,18 @@ function AppointmentDetailsPanel({
           <div className="grid gap-2">
             <Button
               type="button"
+              onClick={() => onConfirm(reserva)}
+              disabled={isPending || reserva.estado === 'confirmed'}
+              className="justify-start"
+            >
+              <CheckCircle2 size={17} aria-hidden="true" />
+              Marcar como confirmada
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
               onClick={() => onComplete(reserva)}
-              disabled={isPending}
+              disabled={isPending || reserva.estado === 'completed'}
               className="justify-start"
             >
               <CheckCircle2 size={17} aria-hidden="true" />
@@ -3018,32 +4233,22 @@ function AppointmentDetailsPanel({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => onWait(reserva)}
-              disabled={isPending || reserva.estado === 'en_espera'}
-              className="justify-start"
-            >
-              <Clock3 size={17} aria-hidden="true" />
-              Marcar en espera
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
               onClick={() => onNoShow(reserva)}
-              disabled={isPending}
+              disabled={isPending || reserva.estado === 'no_show'}
               className="justify-start"
             >
               <AlertCircle size={17} aria-hidden="true" />
-              Marcar no se presenta
+              Marcar como no asistió
             </Button>
             <Button
               type="button"
               variant="secondary"
               onClick={() => onCancel(reserva)}
-              disabled={isPending}
+              disabled={isPending || reserva.estado === 'cancelled'}
               className="justify-start"
             >
               <X size={17} aria-hidden="true" />
-              Cancelar sesión
+              Marcar como cancelada
             </Button>
             <Button
               type="button"
@@ -3061,16 +4266,24 @@ function AppointmentDetailsPanel({
               className="justify-start"
             >
               <FileText size={17} aria-hidden="true" />
-              {hasEvolucion ? 'Ver ficha/evolución' : 'Agregar evolución'}
+              {hasEvolucion ? 'Editar ficha' : 'Ficha clínica'}
             </Button>
             <Button
               type="button"
-              variant="ghost"
-              onClick={onReminder}
+              variant={canSendEmailReminder ? 'secondary' : 'ghost'}
+              onClick={() => onReminder(reserva)}
+              disabled={isPending}
               className="justify-start"
+              title={
+                canSendEmailReminder
+                  ? 'Enviar recordatorio por correo'
+                  : 'Abrir edición para agregar email al paciente'
+              }
             >
               <Bell size={17} aria-hidden="true" />
-              Enviar recordatorio
+              {canSendEmailReminder
+                ? 'Enviar recordatorio por correo'
+                : 'Agregar email para enviar correo'}
             </Button>
           </div>
         </div>
@@ -3084,6 +4297,89 @@ function AppointmentDetailsPanel({
           >
             <Edit3 size={17} aria-hidden="true" />
             Abrir formulario completo
+          </Button>
+        </div>
+      </aside>
+    </div>
+  )
+}
+
+function AgendaBlockDetailsPanel({
+  block,
+  isPending,
+  onClose,
+  onDelete,
+}: {
+  block: AgendaBlockListItem
+  isPending: boolean
+  onClose: () => void
+  onDelete: (block: AgendaBlockListItem) => void
+}) {
+  return (
+    <div className="agendix-modal-overlay fixed inset-0 z-50 bg-slate-950/20 backdrop-blur-sm">
+      <aside className="agendix-panel-slide absolute bottom-0 right-0 top-0 flex w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl shadow-slate-950/15">
+        <div className="border-b border-slate-100/80 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">
+                Bloqueo de agenda
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-800">
+                {blockScopeLabel(block)}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {formatDateTime(block.fecha_inicio)} · {formatBlockTimeRange(block)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Cerrar bloqueo"
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge tone="red">Bloqueado</Badge>
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <div className="grid gap-2.5 rounded-xl bg-slate-50/80 p-4 text-sm ring-1 ring-slate-200/60">
+            <DetailRow
+              label="Alcance"
+              value={block.profesional_id ? 'Profesional' : 'Centro completo'}
+            />
+            <DetailRow label="Horario" value={formatBlockTimeRange(block)} />
+            <DetailRow
+              label="Profesional"
+              value={block.profesional?.nombre ?? '—'}
+            />
+          </div>
+
+          {block.motivo && (
+            <div className="rounded-xl border border-slate-200/70 p-4">
+              <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">
+                Motivo
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {block.motivo}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-200 p-4">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onDelete(block)}
+            disabled={isPending}
+            className="w-full justify-start text-red-600 hover:text-red-700"
+          >
+            <Trash2 size={17} aria-hidden="true" />
+            {isPending ? 'Eliminando...' : 'Eliminar bloqueo'}
           </Button>
         </div>
       </aside>

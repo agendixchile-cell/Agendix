@@ -33,6 +33,10 @@ export const demoReservaProfesionales: ReservaProfesionalOption[] =
       id: profesional.profile_id,
       nombre: profesional.nombre,
       email: profesional.email,
+      descanso_entre_reservas_minutos:
+        profesional.descanso_entre_reservas_minutos,
+      duracion_sesion_minutos: profesional.duracion_sesion_minutos,
+      intervalo_reservas_minutos: profesional.intervalo_reservas_minutos,
     }))
 
 export const demoReservaPacientes: ReservaPacienteOption[] = demoPacientes.map(
@@ -74,10 +78,17 @@ export const demoReservas: ReservaListItem[] =
           profesional: firstProfesional,
           paciente: demoReservaPacientes[0],
           fecha_inicio: todayMorning,
-          fecha_fin: addMinutes(todayMorning, firstService.duracion_minutos),
-          estado: 'confirmada',
+          fecha_fin: addMinutes(
+            todayMorning,
+            firstProfesional.duracion_sesion_minutos ??
+              firstService.duracion_minutos
+          ),
+          estado: 'confirmed',
           estado_asistencia: 'sin_marcar',
           notas: 'Primera sesión agendada desde demo.',
+          meeting_provider: null,
+          meeting_url: null,
+          auto_generated_meeting: false,
           created_at: todayMorning,
           updated_at: todayMorning,
         },
@@ -88,10 +99,17 @@ export const demoReservas: ReservaListItem[] =
           profesional: secondProfesional,
           paciente: demoReservaPacientes[1],
           fecha_inicio: todayAfternoon,
-          fecha_fin: addMinutes(todayAfternoon, secondService.duracion_minutos),
-          estado: 'pendiente',
+          fecha_fin: addMinutes(
+            todayAfternoon,
+            secondProfesional.duracion_sesion_minutos ??
+              secondService.duracion_minutos
+          ),
+          estado: 'pending',
           estado_asistencia: 'sin_marcar',
           notas: null,
+          meeting_provider: null,
+          meeting_url: null,
+          auto_generated_meeting: false,
           created_at: todayAfternoon,
           updated_at: todayAfternoon,
         },

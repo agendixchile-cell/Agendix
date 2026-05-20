@@ -31,6 +31,13 @@ import { FormModal } from '@/components/ui/form-modal'
 import { MetricStrip } from '@/components/ui/metric-strip'
 import { PageHeader } from '@/components/ui/page-header'
 import { SearchField } from '@/components/ui/search-field'
+import { PlanLimitBanner } from '@/components/plans/plan-limit-banner'
+import { UsageMeter } from '@/components/plans/usage-meter'
+import {
+  canAddProfessional,
+  getProfessionalLimit,
+  type PlanUsageContext,
+} from '@/lib/plans'
 import {
   profesionalRoleLabels,
   type ProfesionalListItem,
@@ -45,6 +52,7 @@ type ProfesionalesManagerProps = {
   initialProfesionales: ProfesionalListItem[]
   demoMode: boolean
   loadError?: string
+  planContext?: PlanUsageContext
 }
 
 type ModalState =
@@ -62,6 +70,11 @@ const emptyValues: ProfesionalFormValues = {
   email: '',
   telefono: '',
   especialidad: '',
+  recordatorio_email_subject: '',
+  recordatorio_email_body: '',
+  descanso_entre_reservas_minutos: 0,
+  duracion_sesion_minutos: 60,
+  intervalo_reservas_minutos: 60,
   activo: true,
 }
 
@@ -81,15 +94,31 @@ function demoId(prefix: string) {
 
 function formatSpecialty(profesional: ProfesionalListItem) {
   if (profesional.especialidad) return profesional.especialidad
+  if (profesional.rol === 'owner') return 'Owner clínico'
   if (profesional.rol === 'admin') return 'Dirección clínica'
 
   return 'Sin definir'
+}
+
+function formatAgenda(profesional: ProfesionalListItem) {
+  const descanso = profesional.descanso_entre_reservas_minutos
+  const duracion = profesional.duracion_sesion_minutos ?? 60
+  const intervalo = profesional.intervalo_reservas_minutos ?? duracion
+
+  return [
+    `${duracion} min sesión`,
+    `cada ${intervalo} min`,
+    descanso > 0 ? `${descanso} min descanso` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 export function ProfesionalesManager({
   initialProfesionales,
   demoMode,
   loadError,
+  planContext,
 }: ProfesionalesManagerProps) {
   const router = useRouter()
   const [profesionales, setProfesionales] = useState(initialProfesionales)
@@ -107,6 +136,11 @@ export function ProfesionalesManager({
     () => profesionales.filter((profesional) => profesional.activo).length,
     [profesionales]
   )
+  const professionalLimit = planContext
+    ? getProfessionalLimit(planContext.planId, planContext.extraProfessionalsCount)
+    : null
+  const reachedProfessionalLimit =
+    professionalLimit !== null && activeCount >= professionalLimit
   const inactiveCount = profesionales.length - activeCount
   const specialtyCount = useMemo(() => {
     const specialties = profesionales
@@ -154,7 +188,19 @@ export function ProfesionalesManager({
         const parsedProfesionales = JSON.parse(storedProfesionales)
 
         if (Array.isArray(parsedProfesionales)) {
-          storedValue = parsedProfesionales as ProfesionalListItem[]
+          storedValue = (parsedProfesionales as ProfesionalListItem[]).map(
+            (profesional) => ({
+              ...profesional,
+              descanso_entre_reservas_minutos:
+                profesional.descanso_entre_reservas_minutos ?? 0,
+              duracion_sesion_minutos:
+                profesional.duracion_sesion_minutos ?? 60,
+              intervalo_reservas_minutos:
+                profesional.intervalo_reservas_minutos ??
+                profesional.duracion_sesion_minutos ??
+                60,
+            })
+          )
         }
       }
     } catch {
@@ -175,6 +221,16 @@ export function ProfesionalesManager({
 
   const openCreate = () => {
     setFeedback(null)
+    if (reachedProfessionalLimit) {
+      setFeedback({
+        type: 'error',
+        message:
+          planContext?.planId === 'individual'
+            ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+            : `Alcanzaste el límite de ${professionalLimit} profesionales de tu plan.`,
+      })
+      return
+    }
     form.reset(emptyValues)
     setModal({ mode: 'create' })
   }
@@ -186,6 +242,12 @@ export function ProfesionalesManager({
       email: profesional.email,
       telefono: profesional.telefono ?? '',
       especialidad: profesional.especialidad ?? '',
+      recordatorio_email_subject: profesional.recordatorio_email_subject ?? '',
+      recordatorio_email_body: profesional.recordatorio_email_body ?? '',
+      descanso_entre_reservas_minutos:
+        profesional.descanso_entre_reservas_minutos ?? 0,
+      duracion_sesion_minutos: profesional.duracion_sesion_minutos ?? 60,
+      intervalo_reservas_minutos: profesional.intervalo_reservas_minutos ?? 60,
       activo: profesional.activo,
     })
     setModal({ mode: 'edit', profesional })
@@ -218,12 +280,38 @@ export function ProfesionalesManager({
     }
 
     if (modal?.mode === 'edit') {
+      const activatingProfesional =
+        values.activo && modal.profesional.activo === false
+
+      if (demoMode && activatingProfesional && planContext) {
+        const capacity = canAddProfessional({
+          planId: planContext.planId,
+          currentCount: activeCount,
+          extraProfessionalsCount: planContext.extraProfessionalsCount,
+        })
+
+        if (!capacity.allowed) {
+          setFeedback({
+            type: 'error',
+            message: `Alcanzaste el límite de ${capacity.limit} profesionales de tu plan.`,
+          })
+          return
+        }
+      }
+
       const updatedProfesional: ProfesionalListItem = {
         ...modal.profesional,
         nombre: values.nombre.trim(),
         email: normalizedEmail,
         telefono: values.telefono?.trim() || null,
         especialidad: values.especialidad?.trim() || null,
+        recordatorio_email_subject:
+          values.recordatorio_email_subject?.trim() || null,
+        recordatorio_email_body: values.recordatorio_email_body?.trim() || null,
+        descanso_entre_reservas_minutos:
+          values.descanso_entre_reservas_minutos,
+        duracion_sesion_minutos: values.duracion_sesion_minutos,
+        intervalo_reservas_minutos: values.intervalo_reservas_minutos,
         activo: values.activo,
         updated_at: nowIso(),
       }
@@ -244,6 +332,25 @@ export function ProfesionalesManager({
     }
 
     const timestamp = nowIso()
+    if (demoMode && values.activo && planContext) {
+      const capacity = canAddProfessional({
+        planId: planContext.planId,
+        currentCount: activeCount,
+        extraProfessionalsCount: planContext.extraProfessionalsCount,
+      })
+
+      if (!capacity.allowed) {
+        setFeedback({
+          type: 'error',
+          message:
+            planContext.planId === 'individual'
+              ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+              : `Alcanzaste el límite de ${capacity.limit} profesionales de tu plan.`,
+        })
+        return
+      }
+    }
+
     const nuevoProfesional: ProfesionalListItem = {
       id: demoId('demo-miembro'),
       profile_id: demoId('demo-profile'),
@@ -252,6 +359,12 @@ export function ProfesionalesManager({
       email: normalizedEmail,
       telefono: values.telefono?.trim() || null,
       especialidad: values.especialidad?.trim() || null,
+      recordatorio_email_subject: values.recordatorio_email_subject?.trim() || null,
+      recordatorio_email_body: values.recordatorio_email_body?.trim() || null,
+      descanso_entre_reservas_minutos:
+        values.descanso_entre_reservas_minutos,
+      duracion_sesion_minutos: values.duracion_sesion_minutos,
+      intervalo_reservas_minutos: values.intervalo_reservas_minutos,
       rol: 'profesional',
       activo: values.activo,
       created_at: timestamp,
@@ -306,6 +419,25 @@ export function ProfesionalesManager({
     setFeedback(null)
 
     if (demoMode) {
+      if (nextActiveState && planContext) {
+        const capacity = canAddProfessional({
+          planId: planContext.planId,
+          currentCount: activeCount,
+          extraProfessionalsCount: planContext.extraProfessionalsCount,
+        })
+
+        if (!capacity.allowed) {
+          setFeedback({
+            type: 'error',
+            message:
+              planContext.planId === 'individual'
+                ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+                : `Alcanzaste el límite de ${capacity.limit} profesionales de tu plan.`,
+          })
+          return
+        }
+      }
+
       saveDemoProfesionales(
         profesionales.map((item) =>
           item.id === profesional.id
@@ -336,12 +468,7 @@ export function ProfesionalesManager({
         const savedProfesional = result.profesional
         setProfesionales((current) =>
           current.map((item) =>
-            item.id === savedProfesional.id
-              ? {
-                  ...savedProfesional,
-                  especialidad: item.especialidad,
-                }
-              : item
+            item.id === savedProfesional.id ? savedProfesional : item
           )
         )
       }
@@ -374,6 +501,26 @@ export function ProfesionalesManager({
 
       {feedback && (
         <FeedbackBanner feedback={feedback} onClose={() => setFeedback(null)} />
+      )}
+
+      {reachedProfessionalLimit && (
+        <PlanLimitBanner
+          title="Límite de profesionales alcanzado"
+          description={
+            planContext?.planId === 'individual'
+              ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+              : 'Tu plan actual llegó al máximo de profesionales activos. Mejora el plan o habilita profesionales extra cuando estén disponibles comercialmente.'
+          }
+        />
+      )}
+
+      {planContext && (
+        <UsageMeter
+          label="Profesionales activos"
+          value={activeCount}
+          limit={professionalLimit}
+          helper={`Plan ${planContext.plan.shortName}`}
+        />
       )}
 
       <MetricStrip
@@ -488,6 +635,113 @@ export function ProfesionalesManager({
               </Field>
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field
+                label="Duración sesión"
+                hint="min"
+                error={form.formState.errors.duracion_sesion_minutos?.message}
+              >
+                <input
+                  type="number"
+                  min={5}
+                  max={240}
+                  step={5}
+                  placeholder="60"
+                  className="agendix-input"
+                  aria-invalid={
+                    form.formState.errors.duracion_sesion_minutos
+                      ? 'true'
+                      : 'false'
+                  }
+                  {...form.register('duracion_sesion_minutos', {
+                    setValueAs: (value) => (value === '' ? NaN : Number(value)),
+                  })}
+                />
+              </Field>
+
+              <Field
+                label="Cada cuánto"
+                hint="min"
+                error={form.formState.errors.intervalo_reservas_minutos?.message}
+              >
+                <input
+                  type="number"
+                  min={5}
+                  max={240}
+                  step={5}
+                  placeholder="60"
+                  className="agendix-input"
+                  aria-invalid={
+                    form.formState.errors.intervalo_reservas_minutos
+                      ? 'true'
+                      : 'false'
+                  }
+                  {...form.register('intervalo_reservas_minutos', {
+                    setValueAs: (value) => (value === '' ? NaN : Number(value)),
+                  })}
+                />
+              </Field>
+
+              <Field
+                label="Descanso"
+                hint="min"
+                error={
+                  form.formState.errors.descanso_entre_reservas_minutos?.message
+                }
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={240}
+                  step={5}
+                  placeholder="0"
+                  className="agendix-input"
+                  aria-invalid={
+                    form.formState.errors.descanso_entre_reservas_minutos
+                      ? 'true'
+                      : 'false'
+                  }
+                  {...form.register('descanso_entre_reservas_minutos', {
+                    setValueAs: (value) => (value === '' ? NaN : Number(value)),
+                  })}
+                />
+              </Field>
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4">
+              <Field
+                label="Asunto personalizado"
+                error={form.formState.errors.recordatorio_email_subject?.message}
+              >
+                <input
+                  type="text"
+                  className="agendix-input bg-white"
+                  aria-invalid={
+                    form.formState.errors.recordatorio_email_subject
+                      ? 'true'
+                      : 'false'
+                  }
+                  {...form.register('recordatorio_email_subject')}
+                />
+              </Field>
+
+              <Field
+                label="Mensaje personalizado"
+                error={form.formState.errors.recordatorio_email_body?.message}
+              >
+                <textarea
+                  rows={6}
+                  className="agendix-input min-h-36 resize-y bg-white leading-6"
+                  aria-invalid={
+                    form.formState.errors.recordatorio_email_body
+                      ? 'true'
+                      : 'false'
+                  }
+                  {...form.register('recordatorio_email_body')}
+                />
+              </Field>
+            </div>
+
             <label className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5 text-sm font-medium text-slate-700">
               <span>Profesional activo</span>
               <input
@@ -565,6 +819,7 @@ function ProfesionalesList({
               <th className="px-4 py-3 font-medium">Profesional</th>
               <th className="px-4 py-3 font-medium">Contacto</th>
               <th className="px-4 py-3 font-medium">Especialidad</th>
+              <th className="px-4 py-3 font-medium">Agenda</th>
               <th className="px-4 py-3 font-medium">Estado</th>
               <th className="px-4 py-3 text-right font-medium">Acciones</th>
             </tr>
@@ -582,7 +837,7 @@ function ProfesionalesList({
                         {profesional.nombre}
                       </p>
                       <div className="mt-0.5">
-                        <Badge tone={profesional.rol === 'admin' ? 'blue' : 'slate'}>
+                        <Badge tone={profesional.rol === 'owner' ? 'orange' : profesional.rol === 'admin' ? 'blue' : 'slate'}>
                           {profesionalRoleLabels[profesional.rol]}
                         </Badge>
                       </div>
@@ -601,6 +856,9 @@ function ProfesionalesList({
                 </td>
                 <td className="px-4 py-3.5 text-sm text-slate-500">
                   {formatSpecialty(profesional)}
+                </td>
+                <td className="px-4 py-3.5 text-sm text-slate-500">
+                  {formatAgenda(profesional)}
                 </td>
                 <td className="px-4 py-3.5">
                   <Badge tone={profesional.activo ? 'green' : 'slate'}>
@@ -670,10 +928,11 @@ function ProfesionalesList({
                   {profesional.telefono}
                 </p>
               )}
+              <p>{formatAgenda(profesional)}</p>
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-3">
-              <Badge tone={profesional.rol === 'admin' ? 'blue' : 'slate'}>
+              <Badge tone={profesional.rol === 'owner' ? 'orange' : profesional.rol === 'admin' ? 'blue' : 'slate'}>
                 {profesionalRoleLabels[profesional.rol]}
               </Badge>
               <div className="flex gap-2">

@@ -34,11 +34,7 @@ export const registerSchema = z
       .trim()
       .min(2, 'Ingresa tu nombre')
       .max(120, 'El nombre es demasiado largo'),
-    email: z
-      .string()
-      .trim()
-      .min(1, 'Ingresa tu email')
-      .email('Ingresa un email válido'),
+    email: emailSchema,
     password: z
       .string()
       .min(8, 'La contraseña debe tener al menos 8 caracteres'),

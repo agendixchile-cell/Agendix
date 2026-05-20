@@ -9,9 +9,10 @@ import {
 import type { PacienteActionState, PacienteListItem } from '@/lib/pacientes/types'
 import { createClient } from '@/lib/supabase/server'
 import { getCentroId } from '@/lib/supabase/get-centro-id'
+import { validateActivePatientCapacity } from '@/lib/subscription/server'
 
 const pacienteSelect =
-  'id,nombre,apellido,rut,email,telefono,fecha_nacimiento,notas,created_at,updated_at'
+  'id,nombre,apellido,rut,email,telefono,fecha_nacimiento,notas,activo,created_at,updated_at'
 
 function formatPacientePayload(values: PacienteFormValues) {
   return {
@@ -22,6 +23,7 @@ function formatPacientePayload(values: PacienteFormValues) {
     telefono: values.telefono?.trim() || null,
     fecha_nacimiento: values.fecha_nacimiento || null,
     notas: values.notas?.trim() || null,
+    activo: values.activo,
   }
 }
 
@@ -34,6 +36,10 @@ function supabaseError(message?: string): string {
 
   if (error.includes('duplicate')) {
     return 'Ya existe un paciente con esos datos.'
+  }
+
+  if (error.includes('plan_active_patient_limit_exceeded')) {
+    return 'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.'
   }
 
   if (error.includes('foreign key')) {
@@ -83,6 +89,14 @@ export async function createPacienteAction(
     return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
   }
 
+  if (parsed.data.activo) {
+    const capacity = await validateActivePatientCapacity(supabase, centroId)
+
+    if (!capacity.ok) {
+      return { ok: false, message: capacity.message }
+    }
+  }
+
   const { data, error: insertError } = await supabase
     .from('pacientes')
     .insert({
@@ -129,7 +143,7 @@ export async function updatePacienteAction(
 
   const { data: existingPaciente, error: lookupError } = await supabase
     .from('pacientes')
-    .select('id')
+    .select('id,activo')
     .eq('id', id)
     .eq('centro_id', centroId)
     .maybeSingle()
@@ -140,6 +154,14 @@ export async function updatePacienteAction(
 
   if (!existingPaciente) {
     return { ok: false, message: 'No encontramos el paciente seleccionado.' }
+  }
+
+  if (parsed.data.activo && !existingPaciente.activo) {
+    const capacity = await validateActivePatientCapacity(supabase, centroId)
+
+    if (!capacity.ok) {
+      return { ok: false, message: capacity.message }
+    }
   }
 
   const { error: updateError } = await supabase

@@ -31,6 +31,9 @@ function toReservaListItem(row: ReservaQueryRow): ReservaListItem {
     estado: row.estado,
     estado_asistencia: row.estado_asistencia ?? 'sin_marcar',
     notas: row.notas,
+    meeting_provider: row.meeting_provider,
+    meeting_url: row.meeting_url,
+    auto_generated_meeting: row.auto_generated_meeting,
     created_at: row.created_at,
     updated_at: row.updated_at,
     servicio: {
@@ -147,6 +150,9 @@ export default async function FichasClinicasPage({
         estado,
         estado_asistencia,
         notas,
+        meeting_provider,
+        meeting_url,
+        auto_generated_meeting,
         created_at,
         updated_at,
         servicios!inner(id,nombre,duracion_minutos,precio),
@@ -171,25 +177,10 @@ export default async function FichasClinicasPage({
     evolucionesQuery = evolucionesQuery.eq('profesional_id', user.id)
   }
 
-  const [pacientesResult, fichasResult, evolucionesResult, reservasResult] =
-    await Promise.all([
-      supabase
-        .from('pacientes')
-        .select(
-          'id,nombre,apellido,rut,email,telefono,fecha_nacimiento,notas,created_at,updated_at'
-        )
-        .eq('centro_id', centroId)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('fichas_clinicas')
-        .select(
-          'id,centro_id,paciente_id,antecedentes_relevantes,motivo_consulta,diagnostico_hipotesis,notas_clinicas,documentos,created_at,updated_at'
-        )
-        .eq('centro_id', centroId)
-        .order('updated_at', { ascending: false }),
-      evolucionesQuery,
-      reservasQuery,
-    ])
+  const [evolucionesResult, reservasResult] = await Promise.all([
+    evolucionesQuery,
+    reservasQuery,
+  ])
 
   const reservas = ((reservasResult.data ?? []) as unknown as ReservaQueryRow[]).map(
     toReservaListItem
@@ -197,10 +188,49 @@ export default async function FichasClinicasPage({
   const professionalPatientIds = new Set(
     reservas.map((reserva) => reserva.paciente.id).filter(Boolean)
   )
+  const patientIds = [...professionalPatientIds]
+  const [pacientesResult, fichasResult] = isProfessional
+    ? patientIds.length > 0
+      ? await Promise.all([
+          supabase
+            .from('pacientes')
+            .select(
+              'id,nombre,apellido,rut,email,telefono,fecha_nacimiento,notas,activo,created_at,updated_at'
+            )
+            .eq('centro_id', centroId)
+            .in('id', patientIds)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('fichas_clinicas')
+            .select(
+              'id,centro_id,paciente_id,antecedentes_relevantes,motivo_consulta,diagnostico_hipotesis,notas_clinicas,documentos,created_at,updated_at'
+            )
+            .eq('centro_id', centroId)
+            .in('paciente_id', patientIds)
+            .order('updated_at', { ascending: false }),
+        ])
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+        ]
+    : await Promise.all([
+        supabase
+          .from('pacientes')
+          .select(
+            'id,nombre,apellido,rut,email,telefono,fecha_nacimiento,notas,activo,created_at,updated_at'
+          )
+          .eq('centro_id', centroId)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('fichas_clinicas')
+          .select(
+            'id,centro_id,paciente_id,antecedentes_relevantes,motivo_consulta,diagnostico_hipotesis,notas_clinicas,documentos,created_at,updated_at'
+          )
+          .eq('centro_id', centroId)
+          .order('updated_at', { ascending: false }),
+      ])
   const pacientes = (pacientesResult.data ?? []) as PacienteListItem[]
-  const visiblePacientes = isProfessional
-    ? pacientes.filter((paciente) => professionalPatientIds.has(paciente.id))
-    : pacientes
+  const visiblePacientes = pacientes
 
   const loadError =
     pacientesResult.error ||

@@ -4,18 +4,24 @@ import { useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
-import { registerAction } from '@/app/actions/auth'
+import { registerAction, resendConfirmationAction } from '@/app/actions/auth'
 import { AgendixWordmark } from '@/components/brand/agendix-brand'
 import { Button } from '@/components/ui/button'
 import { FeedbackBanner, type FeedbackMessage } from '@/components/ui/feedback-banner'
 import { Field } from '@/components/ui/field'
 import { registerSchema, type RegisterValues } from '@/lib/auth/validation'
+import { getMarketingUrl } from '@/lib/urls'
+
+const marketingHomeUrl = getMarketingUrl('/')
 
 export default function RegisterPage() {
   const [serverFeedback, setServerFeedback] = useState<FeedbackMessage | null>(null)
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null)
+  const [isResendingConfirmation, setIsResendingConfirmation] = useState(false)
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
@@ -34,13 +40,44 @@ export default function RegisterPage() {
 
     if (state?.error) {
       setServerFeedback({ type: 'error', message: state.error })
+      setRegisteredEmail(null)
+      return
+    }
+
+    if (state?.success) {
+      setServerFeedback({ type: 'success', message: state.success })
+      setRegisteredEmail(values.email.trim().toLowerCase())
+      reset()
     }
   })
+
+  const onResendConfirmation = async () => {
+    if (!registeredEmail) return
+
+    setIsResendingConfirmation(true)
+    setServerFeedback(null)
+
+    const state = await resendConfirmationAction(registeredEmail)
+
+    if (state?.error) {
+      setServerFeedback({ type: 'error', message: state.error })
+    } else if (state?.success) {
+      setServerFeedback({ type: 'success', message: state.success })
+    }
+
+    setIsResendingConfirmation(false)
+  }
 
   return (
     <div className="mx-auto w-full max-w-xl">
       <div className="mb-5 flex flex-col items-center text-center">
-        <AgendixWordmark priority className="mx-auto" />
+        <Link
+          href={marketingHomeUrl}
+          className="inline-flex"
+          aria-label="Volver a la landing de Agendix"
+        >
+          <AgendixWordmark preload className="mx-auto" />
+        </Link>
         <p className="mt-1 max-w-sm text-sm leading-6 text-slate-500">
           Crea tu espacio para ordenar reservas, pacientes y equipo.
         </p>
@@ -123,9 +160,22 @@ export default function RegisterPage() {
             />
           )}
 
+          {registeredEmail && (
+            <button
+              type="button"
+              onClick={onResendConfirmation}
+              disabled={isResendingConfirmation}
+              className="text-sm font-semibold text-orange-500 transition hover:text-orange-600 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isResendingConfirmation
+                ? 'Reenviando correo...'
+                : 'Reenviar correo de confirmación'}
+            </button>
+          )}
+
           <Button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || serverFeedback?.type === 'success'}
             className="w-full"
           >
             {isSubmitting ? 'Creando cuenta...' : 'Crear cuenta'}
@@ -140,6 +190,14 @@ export default function RegisterPage() {
           className="font-semibold text-orange-500 hover:text-orange-600 hover:underline"
         >
           Iniciar sesión
+        </Link>
+      </p>
+      <p className="mt-3 text-center text-xs text-slate-400">
+        <Link
+          href={marketingHomeUrl}
+          className="font-semibold text-slate-500 transition hover:text-orange-600 hover:underline"
+        >
+          Volver a la landing
         </Link>
       </p>
     </div>

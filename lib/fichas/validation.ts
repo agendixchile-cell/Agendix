@@ -29,8 +29,8 @@ export const evolucionSesionSchema = z.object({
   texto_evolucion: z
     .string()
     .trim()
-    .min(3, 'Ingresa la evolución de la sesión')
-    .max(4000, 'La evolución no puede superar 4000 caracteres'),
+    .min(3, 'Ingresa la historia clínica')
+    .max(4000, 'La historia clínica no puede superar 4000 caracteres'),
   proximos_pasos: z
     .string()
     .trim()

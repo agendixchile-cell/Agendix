@@ -156,6 +156,39 @@ body {
   color: var(--agendix-muted);
 }
 
+.agendix-time-input {
+  display: block;
+  width: 100%;
+  min-height: 2.25rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--agendix-border);
+  background: #ffffff;
+  padding: 0.45rem 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.1;
+  color: var(--agendix-text);
+  outline: none;
+  box-shadow: 0 1px 1px rgb(24 24 27 / 0.02);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+.agendix-time-input:focus {
+  border-color: var(--agendix-primary);
+  background: #ffffff;
+  box-shadow:
+    0 0 0 3px rgb(249 115 91 / 0.14),
+    0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.agendix-time-input:disabled {
+  background: #F1F5F9;
+  color: var(--agendix-muted);
+  cursor: not-allowed;
+}
+
 /* ── Select ────────────────────────────────────────────────── */
 /* Inherits all .agendix-input token values; adds a consistent  */
 /* chevron arrow and suppresses the native OS dropdown widget.  */
@@ -283,4 +316,21 @@ body {
 
 .agendix-panel-slide {
   animation: agendix-slide-right-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.public-booking-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 100vh !important;
+}
+
+.public-booking-main {
+  flex: 1 1 auto !important;
+  min-height: calc(100vh - 8.5rem) !important;
+}
+
+.public-booking-footer {
+  flex: 0 0 auto !important;
+  margin-top: auto !important;
+  width: 100% !important;
 }

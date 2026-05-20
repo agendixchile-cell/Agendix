@@ -40,6 +40,9 @@ type ServicioRow = {
 
 type ProfesionalRow = {
   profile_id: string
+  descanso_entre_reservas_minutos: number | null
+  duracion_sesion_minutos: number | null
+  intervalo_reservas_minutos: number | null
   profiles: {
     nombre: string
     apellido: string | null
@@ -48,9 +51,13 @@ type ProfesionalRow = {
 }
 
 type BusyReservaRow = {
-  id: string
   profesional_id: string
-  sala_id: string
+  fecha_inicio: string
+  fecha_fin: string
+}
+
+type ScheduleBlockRow = {
+  profesional_id: string | null
   fecha_inicio: string
   fecha_fin: string
 }
@@ -73,6 +80,7 @@ export async function generateMetadata({
     .select('nombre')
     .eq('slug', slug)
     .eq('activo', true)
+    .eq('public_booking_enabled', true)
     .maybeSingle()
 
   return {
@@ -129,15 +137,19 @@ async function getPublicBookingData(
           especialidad: profesional.especialidad,
           bio: null,
           avatarUrl: null,
+          descansoEntreReservasMinutos:
+            profesional.descanso_entre_reservas_minutos ?? 0,
+          duracionSesionMinutos: profesional.duracion_sesion_minutos ?? 60,
+          intervaloReservasMinutos:
+            profesional.intervalo_reservas_minutos ?? 60,
         })),
       horarios,
       busySlots: demoReservas.map((reserva) => ({
-        id: reserva.id,
         profesionalId: reserva.profesional.id,
-        salaId: reserva.sala.id,
         fechaInicio: reserva.fecha_inicio,
         fechaFin: reserva.fecha_fin,
       })),
+      scheduleBlocks: [],
       activeRoomCount: Math.max(1, demoSalas.filter((sala) => sala.activa).length),
       demoMode: true,
     }
@@ -149,6 +161,7 @@ async function getPublicBookingData(
     .select('id,nombre,slug,direccion,telefono,email,logo_url')
     .eq('slug', slug)
     .eq('activo', true)
+    .eq('public_booking_enabled', true)
     .maybeSingle()
 
   if (!centro) return null
@@ -162,19 +175,24 @@ async function getPublicBookingData(
     { data: horariosData },
     { data: salasData },
     { data: reservasData },
+    { data: blocksData },
   ] = await Promise.all([
     supabase
       .from('servicios')
       .select('id,nombre,descripcion,duracion_minutos,precio')
       .eq('centro_id', centro.id)
       .eq('activo', true)
+      .eq('public_visible', true)
       .order('nombre'),
     supabase
       .from('miembros_centro')
-      .select('profile_id,profiles!inner(nombre,apellido,avatar_url)')
+      .select(
+        'profile_id,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,profiles!inner(nombre,apellido,avatar_url)'
+      )
       .eq('centro_id', centro.id)
       .eq('activo', true)
-      .in('rol', ['admin', 'profesional']),
+      .eq('public_visible', true)
+      .in('rol', ['owner', 'admin', 'profesional']),
     supabase
       .from('horarios_centro')
       .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
@@ -187,10 +205,16 @@ async function getPublicBookingData(
       .eq('activa', true),
     supabase
       .from('reservas')
-      .select('id,profesional_id,sala_id,fecha_inicio,fecha_fin')
+      .select('profesional_id,fecha_inicio,fecha_fin')
       .eq('centro_id', centro.id)
-      .neq('estado', 'cancelada')
+      .neq('estado', 'cancelled')
       .gte('fecha_inicio', now.toISOString())
+      .lte('fecha_inicio', until.toISOString()),
+    supabase
+      .from('bloqueos_agenda')
+      .select('profesional_id,fecha_inicio,fecha_fin')
+      .eq('centro_id', centro.id)
+      .gte('fecha_fin', now.toISOString())
       .lte('fecha_inicio', until.toISOString()),
   ])
 
@@ -236,16 +260,24 @@ async function getPublicBookingData(
           especialidad: null,
           bio: null,
           avatarUrl: profile?.avatar_url ?? null,
+          descansoEntreReservasMinutos:
+            miembro.descanso_entre_reservas_minutos ?? 0,
+          duracionSesionMinutos: miembro.duracion_sesion_minutos ?? 60,
+          intervaloReservasMinutos:
+            miembro.intervalo_reservas_minutos ?? 60,
         }
       }
     ),
     horarios,
     busySlots: ((reservasData ?? []) as BusyReservaRow[]).map((reserva) => ({
-      id: reserva.id,
       profesionalId: reserva.profesional_id,
-      salaId: reserva.sala_id,
       fechaInicio: reserva.fecha_inicio,
       fechaFin: reserva.fecha_fin,
+    })),
+    scheduleBlocks: ((blocksData ?? []) as ScheduleBlockRow[]).map((block) => ({
+      profesionalId: block.profesional_id,
+      fechaInicio: block.fecha_inicio,
+      fechaFin: block.fecha_fin,
     })),
     activeRoomCount: Math.max(1, salasData?.length ?? 0),
     demoMode: false,

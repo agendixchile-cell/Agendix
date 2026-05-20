@@ -65,9 +65,10 @@ export async function saveFichaClinicaAction(
     return { ok: true, message: 'Ficha clínica guardada en modo demo.' }
   }
 
-  const { supabase, centroId, error } = await getClinicalCentroId('fichas clínicas')
+  const { supabase, centroId, profileId, rol, error } =
+    await getClinicalCentroId('fichas clínicas')
 
-  if (error || !centroId) {
+  if (error || !centroId || !profileId || !rol) {
     return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
   }
 
@@ -84,6 +85,29 @@ export async function saveFichaClinicaAction(
 
   if (!paciente) {
     return { ok: false, message: 'No encontramos el paciente seleccionado.' }
+  }
+
+  if (rol === 'profesional') {
+    const { data: linkedReserva, error: linkedReservaError } = await supabase
+      .from('reservas')
+      .select('id')
+      .eq('centro_id', centroId)
+      .eq('paciente_id', parsed.data.paciente_id)
+      .eq('profesional_id', profileId)
+      .neq('estado', 'cancelled')
+      .limit(1)
+      .maybeSingle()
+
+    if (linkedReservaError) {
+      return { ok: false, message: supabaseError(linkedReservaError.message) }
+    }
+
+    if (!linkedReserva) {
+      return {
+        ok: false,
+        message: 'Solo puedes editar fichas de pacientes vinculados a tus citas.',
+      }
+    }
   }
 
   const { data, error: upsertError } = await supabase
@@ -114,11 +138,11 @@ export async function saveEvolucionSesionAction(
   const parsed = evolucionSesionSchema.safeParse(values)
 
   if (!parsed.success) {
-    return { ok: false, message: 'Revisa los datos de la evolución.' }
+    return { ok: false, message: 'Revisa los datos de la ficha clínica.' }
   }
 
   if (isDemoMode()) {
-    return { ok: true, message: 'Evolución guardada en modo demo.' }
+    return { ok: true, message: 'Ficha clínica guardada en modo demo.' }
   }
 
   const { supabase, centroId, profileId, rol, error } =
@@ -175,16 +199,17 @@ export async function saveEvolucionSesionAction(
 
   await supabase
     .from('reservas')
-    .update({ estado: 'completada', estado_asistencia: 'asistio' })
+    .update({ estado: 'completed', estado_asistencia: 'asistio' })
     .eq('id', reserva.id)
     .eq('centro_id', centroId)
 
   revalidatePath('/agenda')
+  revalidatePath('/reservas')
   revalidatePath('/fichas-clinicas')
 
   return {
     ok: true,
-    message: 'Evolución guardada.',
+    message: 'Ficha clínica guardada.',
     evolucion: data as EvolucionSesionListItem,
   }
 }

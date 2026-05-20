@@ -26,6 +26,7 @@ import {
   formatBookingDate,
   generateBookingDays,
   getAvailableSlots,
+  getEffectiveSessionDuration,
 } from '@/lib/booking/availability'
 import type {
   PublicBookingData,
@@ -100,19 +101,22 @@ function resolveNextBookingDate({
   currentDate: string
 }) {
   const service = data.servicios.find((item) => item.id === serviceId) ?? null
+  const professional =
+    data.profesionales.find((item) => item.id === professionalId) ?? null
 
-  if (!service || !professionalId) return ''
+  if (!service || !professional) return ''
 
   if (
     currentDate &&
-    getAvailableSlots({
-      fecha: currentDate,
-      servicio: service,
-      profesionalId: professionalId,
-      horarios: data.horarios,
-      busySlots: data.busySlots,
-      activeRoomCount: data.activeRoomCount,
-    }).length > 0
+      getAvailableSlots({
+        fecha: currentDate,
+        servicio: service,
+        profesional: professional,
+        horarios: data.horarios,
+        busySlots: data.busySlots,
+        scheduleBlocks: data.scheduleBlocks,
+        activeRoomCount: data.activeRoomCount,
+      }).length > 0
   ) {
     return currentDate
   }
@@ -125,11 +129,12 @@ function resolveNextBookingDate({
       getAvailableSlots({
         fecha: day.value,
         servicio: service,
-        profesionalId: professionalId,
-        horarios: data.horarios,
-        busySlots: data.busySlots,
-        activeRoomCount: data.activeRoomCount,
-      }).length > 0
+        profesional: professional,
+          horarios: data.horarios,
+          busySlots: data.busySlots,
+          scheduleBlocks: data.scheduleBlocks,
+          activeRoomCount: data.activeRoomCount,
+        }).length > 0
     )
   })
 
@@ -192,17 +197,19 @@ export function PublicBookingFlow({
       getAvailableSlots({
         fecha,
         servicio: selectedService,
-        profesionalId: professionalId,
+        profesional: selectedProfessional,
         horarios: data.horarios,
         busySlots: data.busySlots,
+        scheduleBlocks: data.scheduleBlocks,
         activeRoomCount: data.activeRoomCount,
       }),
     [
       data.activeRoomCount,
       data.busySlots,
+      data.scheduleBlocks,
       data.horarios,
       fecha,
-      professionalId,
+      selectedProfessional,
       selectedService,
     ]
   )
@@ -308,10 +315,16 @@ export function PublicBookingFlow({
 
   const hasBookableData =
     data.servicios.length > 0 && data.profesionales.length > 0
+  const hasContactInfo = Boolean(
+    data.centro.direccion || data.centro.telefono || data.centro.email
+  )
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-slate-800">
-      <header className="border-b border-slate-200/80 bg-white/88 backdrop-blur-xl">
+    <div
+      className="public-booking-shell flex flex-col bg-[#FAFAF8] text-slate-800"
+      style={{ minHeight: '100vh' }}
+    >
+      <header className="shrink-0 border-b border-slate-200/80 bg-white/88 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#FFF4EF] text-sm font-bold text-[#F9735B] ring-1 ring-orange-200/70">
@@ -344,9 +357,16 @@ export function PublicBookingFlow({
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,0.82fr)_minmax(420px,1fr)] lg:gap-5 lg:px-8 lg:py-7">
-        <section className="space-y-4 lg:sticky lg:top-8 lg:self-start">
-          <div className="rounded-[1.35rem] bg-[#22211F] p-5 text-white shadow-xl shadow-slate-950/12 sm:p-6">
+      <main
+        className="public-booking-main mx-auto grid w-full max-w-6xl flex-1 gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,0.82fr)_minmax(420px,1fr)] lg:items-stretch lg:gap-5 lg:px-8 lg:py-6"
+        style={{ minHeight: 'calc(100vh - 8.5rem)' }}
+      >
+        <section className="space-y-4 lg:flex lg:flex-col lg:self-stretch">
+          <div
+            className={`rounded-[1.35rem] bg-[#22211F] p-5 text-white shadow-xl shadow-slate-950/12 sm:p-6 lg:flex lg:flex-col ${
+              hasContactInfo ? '' : 'lg:flex-1'
+            }`}
+          >
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-[#F9735B] ring-1 ring-white/15">
                 <HeartPulse size={20} aria-hidden="true" />
@@ -384,7 +404,9 @@ export function PublicBookingFlow({
             <button
               type="button"
               onClick={scrollToBooking}
-              className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#F9735B] px-5 text-sm font-semibold text-white shadow-sm shadow-orange-950/20 transition hover:bg-[#E85C45]"
+              className={`mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#F9735B] px-5 text-sm font-semibold text-white shadow-sm shadow-orange-950/20 transition hover:bg-[#E85C45] ${
+                hasContactInfo ? '' : 'lg:mt-auto'
+              }`}
             >
               Agendar hora
               <ArrowRight size={16} aria-hidden="true" />
@@ -406,7 +428,7 @@ export function PublicBookingFlow({
 
         <section
           ref={bookingRef}
-          className="scroll-mt-6 overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-white shadow-lg shadow-slate-900/[0.045]"
+          className="flex scroll-mt-6 flex-col overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-white shadow-lg shadow-slate-900/[0.045] lg:relative"
         >
           <div className="border-b border-slate-100 bg-[#FAFAF8] px-4 py-4 sm:px-5">
             <div className="flex items-start justify-between gap-3">
@@ -447,7 +469,7 @@ export function PublicBookingFlow({
             </div>
           </div>
 
-          <div className="p-4 sm:p-5">
+          <div className="flex flex-1 flex-col p-4 sm:p-5">
             {!hasBookableData ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center">
                 <p className="font-semibold text-slate-800">
@@ -458,7 +480,11 @@ export function PublicBookingFlow({
                 </p>
               </div>
             ) : (
-              <>
+              <div
+                className={`flex flex-1 flex-col ${
+                  step !== 4 ? 'lg:pb-24' : ''
+                }`}
+              >
                 {step === 1 && (
                   <ServiceStep
                     services={data.servicios}
@@ -476,15 +502,15 @@ export function PublicBookingFlow({
                 )}
 
                 {step === 3 && (
-                  <DateTimeStep
-                    days={days}
-                    selectedDate={fecha}
-                    selectedHour={hora}
-                    selectedService={selectedService}
-                    selectedProfessionalId={professionalId}
-                    data={data}
-                    slots={slots}
-                    onDateChange={(value) => {
+                <DateTimeStep
+                  days={days}
+                  selectedDate={fecha}
+                  selectedHour={hora}
+                  selectedService={selectedService}
+                  selectedProfessional={selectedProfessional}
+                  data={data}
+                  slots={slots}
+                  onDateChange={(value) => {
                       setFecha(value)
                       setHora('')
                     }}
@@ -507,7 +533,7 @@ export function PublicBookingFlow({
                 )}
 
                 {step !== 4 && (
-                  <div className="mt-5 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                  <div className="mt-5 flex items-center justify-between gap-3 border-t border-slate-100 pt-4 lg:absolute lg:inset-x-5 lg:bottom-5 lg:mt-0 lg:bg-white">
                     <button
                       type="button"
                       onClick={goBack}
@@ -530,13 +556,15 @@ export function PublicBookingFlow({
                     </button>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-slate-200/80 bg-white/70 py-5 text-center text-xs text-slate-500">
+      <footer
+        className="public-booking-footer border-t border-slate-200/80 bg-white/90 py-4 text-center text-xs text-slate-500 backdrop-blur-xl"
+      >
         Reservas gestionadas con <span className="font-semibold text-[#F9735B]">Agendix</span>
       </footer>
     </div>
@@ -693,6 +721,15 @@ function ProfessionalStep({
                   <p className="mt-0.5 text-sm text-slate-500">
                     {professional.especialidad ?? 'Profesional del centro'}
                   </p>
+                  {professional.descansoEntreReservasMinutos > 0 && (
+                    <p className="mt-1 text-xs font-medium text-slate-400">
+                      {professional.descansoEntreReservasMinutos} min entre reservas
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs font-medium text-slate-400">
+                    {professional.duracionSesionMinutos} min · cada{' '}
+                    {professional.intervaloReservasMinutos} min
+                  </p>
                   {professional.bio && (
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
                       {professional.bio}
@@ -713,7 +750,7 @@ function DateTimeStep({
   selectedDate,
   selectedHour,
   selectedService,
-  selectedProfessionalId,
+  selectedProfessional,
   data,
   slots,
   onDateChange,
@@ -723,7 +760,7 @@ function DateTimeStep({
   selectedDate: string
   selectedHour: string
   selectedService: PublicBookingService | null
-  selectedProfessionalId: string
+  selectedProfessional: PublicBookingProfessional | null
   data: PublicBookingData
   slots: string[]
   onDateChange: (date: string) => void
@@ -743,13 +780,14 @@ function DateTimeStep({
       <div className="grid gap-2 sm:grid-cols-4">
         {days.map((day) => {
           const daySlots =
-            selectedService && selectedProfessionalId
+            selectedService && selectedProfessional
               ? getAvailableSlots({
                   fecha: day.value,
                   servicio: selectedService,
-                  profesionalId: selectedProfessionalId,
+                  profesional: selectedProfessional,
                   horarios: data.horarios,
                   busySlots: data.busySlots,
+                  scheduleBlocks: data.scheduleBlocks,
                   activeRoomCount: data.activeRoomCount,
                 })
               : []
@@ -859,6 +897,17 @@ function ContactStep({
       <div className="rounded-2xl border border-slate-200 bg-[#FAFAF8] p-3.5">
         <div className="grid gap-3 text-sm sm:grid-cols-2">
           <SummaryItem label="Servicio" value={selectedService?.nombre ?? '—'} />
+          <SummaryItem
+            label="Duración"
+            value={
+              selectedService && selectedProfessional
+                ? `${getEffectiveSessionDuration({
+                    servicio: selectedService,
+                    profesional: selectedProfessional,
+                  })} min`
+                : '—'
+            }
+          />
           <SummaryItem
             label="Profesional"
             value={selectedProfessional?.nombre ?? '—'}

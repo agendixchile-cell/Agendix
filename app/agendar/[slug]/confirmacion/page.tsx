@@ -7,6 +7,7 @@ import { demoCentro } from '@/lib/centro/demo'
 import { formatBookingDate } from '@/lib/booking/availability'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import { zonedDateKey, zonedTimeInput } from '@/lib/timezone'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -44,11 +45,7 @@ function searchValue(value: string | string[] | undefined) {
 }
 
 function formatTime(iso: string) {
-  return new Intl.DateTimeFormat('es-CL', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(new Date(iso))
+  return zonedTimeInput(iso)
 }
 
 function formatPrice(value: number | null) {
@@ -156,7 +153,7 @@ export default async function BookingConfirmationPage({
       centroNombre={centro.nombre}
       serviceName={reservaRow.servicios?.nombre ?? 'Servicio reservado'}
       professionalName={professionalName}
-      date={reservaRow.fecha_inicio.slice(0, 10)}
+      date={zonedDateKey(reservaRow.fecha_inicio)}
       hour={formatTime(reservaRow.fecha_inicio)}
       price={formatPrice(pagoRow?.monto ?? reservaRow.servicios?.precio ?? null)}
       paymentStatus={paymentLabel(pagoRow)}
