@@ -5,6 +5,8 @@ import { CalendarCheck2, Clock3, CreditCard, HeartPulse, UserRound } from 'lucid
 import { isDemoMode } from '@/lib/auth/demo'
 import { demoCentro } from '@/lib/centro/demo'
 import { formatBookingDate } from '@/lib/booking/availability'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
+import { getDemoPlanId } from '@/lib/subscription/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { zonedDateKey, zonedTimeInput } from '@/lib/timezone'
@@ -66,10 +68,12 @@ export default async function BookingConfirmationPage({
   const query = await searchParams
 
   if (isDemoMode() && slug === demoCentro.slug && searchValue(query.demo)) {
+    const dataset = getDemoPlanDataset(await getDemoPlanId())
+
     return (
       <ConfirmationView
         slug={slug}
-        centroNombre={demoCentro.nombre}
+        centroNombre={dataset.centro.nombre}
         serviceName={searchValue(query.servicio) ?? 'Servicio seleccionado'}
         professionalName={searchValue(query.profesional) ?? 'Profesional del centro'}
         date={searchValue(query.fecha) ?? ''}

@@ -15,6 +15,7 @@ const APP_ONLY_PREFIXES = [
   "reservas",
   "pacientes",
   "fichas-clinicas",
+  "estadisticas",
 ];
 
 function hostHas(value: string) {
@@ -22,6 +23,7 @@ function hostHas(value: string) {
 }
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   async redirects() {
     const appOnlyAuthRedirects = APP_ONLY_AUTH_PREFIXES.flatMap((prefix) => [
       {

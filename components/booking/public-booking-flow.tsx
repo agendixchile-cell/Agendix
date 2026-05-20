@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, type ElementType } from 'react'
+import { useEffect, useMemo, useRef, useState, type ElementType } from 'react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
@@ -21,6 +21,7 @@ import {
   Phone,
   ShieldCheck,
 } from 'lucide-react'
+import { EntityImage } from '@/components/ui/entity-image'
 import { Field } from '@/components/ui/field'
 import {
   formatBookingDate,
@@ -39,6 +40,7 @@ import {
   publicBookingFormSchema,
   type PublicBookingFormValues,
 } from '@/lib/booking/validation'
+import { readDemoStorageItem } from '@/lib/demo-storage'
 
 type Step = 1 | 2 | 3 | 4
 
@@ -58,16 +60,6 @@ function modalityLabel(modality: PublicBookingService['modalidad']) {
   if (modality === 'online') return 'Online'
   if (modality === 'ambas') return 'Online o presencial'
   return 'Presencial'
-}
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
 }
 
 function stepIsReady({
@@ -141,8 +133,92 @@ function resolveNextBookingDate({
   return nextDay?.value ?? ''
 }
 
+type StoredDemoCentro = {
+  nombre?: string
+  direccion?: string | null
+  telefono?: string | null
+  email?: string | null
+  logo_url?: string | null
+}
+
+type StoredDemoProfessional = {
+  profile_id: string
+  nombre: string
+  apellido?: string | null
+  especialidad?: string | null
+  avatar_url?: string | null
+  activo?: boolean
+  descanso_entre_reservas_minutos?: number
+  duracion_sesion_minutos?: number
+  intervalo_reservas_minutos?: number
+}
+
+function mergeDemoBookingData(data: PublicBookingData): PublicBookingData {
+  if (!data.demoMode) return data
+
+  let nextData = data
+
+  try {
+    const storedCentroValue = readDemoStorageItem(data.demoPlanId, 'centro')
+
+    if (storedCentroValue) {
+      const storedCentro = JSON.parse(storedCentroValue) as StoredDemoCentro
+
+      nextData = {
+        ...nextData,
+        centro: {
+          ...nextData.centro,
+          nombre: storedCentro.nombre ?? nextData.centro.nombre,
+          direccion: storedCentro.direccion ?? nextData.centro.direccion,
+          telefono: storedCentro.telefono ?? nextData.centro.telefono,
+          email: storedCentro.email ?? nextData.centro.email,
+          logoUrl: storedCentro.logo_url ?? nextData.centro.logoUrl,
+        },
+      }
+    }
+
+    const storedProfessionalsValue = readDemoStorageItem(
+      data.demoPlanId,
+      'profesionales'
+    )
+
+    if (storedProfessionalsValue) {
+      const storedProfessionals = JSON.parse(
+        storedProfessionalsValue
+      ) as StoredDemoProfessional[]
+
+      if (Array.isArray(storedProfessionals)) {
+        nextData = {
+          ...nextData,
+          profesionales: storedProfessionals
+            .filter((professional) => professional.activo !== false)
+            .map((professional) => ({
+              id: professional.profile_id,
+              nombre: [professional.nombre, professional.apellido]
+                .filter(Boolean)
+                .join(' '),
+              especialidad: professional.especialidad ?? null,
+              bio: null,
+              avatarUrl: professional.avatar_url ?? null,
+              descansoEntreReservasMinutos:
+                professional.descanso_entre_reservas_minutos ?? 0,
+              duracionSesionMinutos:
+                professional.duracion_sesion_minutos ?? 60,
+              intervaloReservasMinutos:
+                professional.intervalo_reservas_minutos ?? 60,
+            })),
+        }
+      }
+    }
+  } catch {
+    return data
+  }
+
+  return nextData
+}
+
 export function PublicBookingFlow({
-  data,
+  data: initialData,
   slug,
 }: {
   data: PublicBookingData
@@ -150,6 +226,7 @@ export function PublicBookingFlow({
 }) {
   const router = useRouter()
   const bookingRef = useRef<HTMLDivElement | null>(null)
+  const [data, setData] = useState(initialData)
   const initialServiceId = data.servicios.length === 1 ? data.servicios[0].id : ''
   const initialProfessionalId =
     data.profesionales.length === 1 ? data.profesionales[0].id : ''
@@ -167,6 +244,12 @@ export function PublicBookingFlow({
   const [hora, setHora] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    window.setTimeout(() => {
+      setData(mergeDemoBookingData(initialData))
+    }, 0)
+  }, [initialData])
 
   const form = useForm<PublicBookingFormValues>({
     resolver: zodResolver(publicBookingFormSchema),
@@ -186,6 +269,8 @@ export function PublicBookingFlow({
   const selectedProfessional =
     data.profesionales.find((professional) => professional.id === professionalId) ??
     null
+  const spotlightProfessional =
+    data.profesionales.length === 1 ? data.profesionales[0] : null
 
   const days = useMemo(
     () => generateBookingDays({ horarios: data.horarios, days: 28 }),
@@ -327,18 +412,13 @@ export function PublicBookingFlow({
       <header className="shrink-0 border-b border-slate-200/80 bg-white/88 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#FFF4EF] text-sm font-bold text-[#F9735B] ring-1 ring-orange-200/70">
-              {data.centro.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={data.centro.logoUrl}
-                  alt=""
-                  className="h-full w-full rounded-2xl object-cover"
-                />
-              ) : (
-                initials(data.centro.nombre)
-              )}
-            </div>
+            <EntityImage
+              src={data.centro.logoUrl}
+              name={data.centro.nombre}
+              variant="logo"
+              size="sm"
+              className="rounded-2xl"
+            />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-900">
                 {data.centro.nombre}
@@ -382,6 +462,27 @@ export function PublicBookingFlow({
               {data.centro.descripcion ??
                 'Elige un servicio, revisa horarios disponibles y solicita tu reserva en pocos pasos.'}
             </p>
+            {spotlightProfessional && (
+              <div className="mt-5 flex items-center gap-3 rounded-2xl bg-white/10 p-3 text-sm ring-1 ring-white/10">
+                <EntityImage
+                  src={spotlightProfessional.avatarUrl}
+                  name={spotlightProfessional.nombre}
+                  size="lg"
+                  className="bg-white/15 text-white ring-white/20"
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                    Atención con
+                  </p>
+                  <p className="mt-0.5 font-semibold text-white [overflow-wrap:anywhere]">
+                    {spotlightProfessional.nombre}
+                  </p>
+                  <p className="text-sm text-white/65 [overflow-wrap:anywhere]">
+                    {spotlightProfessional.especialidad ?? 'Profesional del centro'}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="mt-5 flex flex-wrap gap-2 text-xs font-semibold text-white/75">
               {['Sin crear cuenta', 'Horarios disponibles', 'Recordatorios antes de tu atención'].map(
                 (item) => (
@@ -702,18 +803,12 @@ function ProfessionalStep({
               }`}
             >
               <div className="flex gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-sm font-semibold text-white">
-                  {professional.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={professional.avatarUrl}
-                      alt=""
-                      className="h-full w-full rounded-xl object-cover"
-                    />
-                  ) : (
-                    initials(professional.nombre)
-                  )}
-                </span>
+                <EntityImage
+                  src={professional.avatarUrl}
+                  name={professional.nombre}
+                  size="md"
+                  className="bg-slate-700 text-white ring-slate-600/70"
+                />
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900">
                     {professional.nombre}
@@ -895,6 +990,23 @@ function ContactStep({
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-[#FAFAF8] p-3.5">
+        {selectedProfessional && (
+          <div className="mb-3 flex items-center gap-3 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
+            <EntityImage
+              src={selectedProfessional.avatarUrl}
+              name={selectedProfessional.nombre}
+              size="sm"
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800 [overflow-wrap:anywhere]">
+                {selectedProfessional.nombre}
+              </p>
+              <p className="text-xs text-slate-500 [overflow-wrap:anywhere]">
+                {selectedProfessional.especialidad ?? 'Profesional del centro'}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="grid gap-3 text-sm sm:grid-cols-2">
           <SummaryItem label="Servicio" value={selectedService?.nombre ?? '—'} />
           <SummaryItem

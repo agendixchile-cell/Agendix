@@ -32,11 +32,18 @@ import {
   servicioSchema,
   type ServicioFormValues,
 } from '@/lib/servicios/validation'
+import {
+  readDemoStorageItem,
+  removeDemoStorageItem,
+  writeDemoStorageItem,
+} from '@/lib/demo-storage'
+import type { PlanId } from '@/lib/plans'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 type ServiciosManagerProps = {
   initialServicios: ServicioListItem[]
   demoMode: boolean
+  demoPlanId?: PlanId
   loadError?: string
 }
 
@@ -58,8 +65,6 @@ const emptyValues: ServicioFormValues = {
   activo: true,
 }
 
-const demoStorageKey = 'agendix-demo-servicios'
-
 function nowIso() {
   return new Date().toISOString()
 }
@@ -77,6 +82,7 @@ function formatPrice(value: number | null) {
 export function ServiciosManager({
   initialServicios,
   demoMode,
+  demoPlanId,
   loadError,
 }: ServiciosManagerProps) {
   const router = useRouter()
@@ -124,12 +130,12 @@ export function ServiciosManager({
   useEffect(() => {
     if (!demoMode) return
 
-    migrateLegacyAgendixStorage()
+    migrateLegacyAgendixStorage(demoPlanId)
 
     let storedValue: ServicioListItem[] | null = null
 
     try {
-      const storedServicios = window.localStorage.getItem(demoStorageKey)
+      const storedServicios = readDemoStorageItem(demoPlanId, 'servicios')
 
       if (storedServicios) {
         const parsedServicios = JSON.parse(storedServicios)
@@ -139,19 +145,17 @@ export function ServiciosManager({
         }
       }
     } catch {
-      window.localStorage.removeItem(demoStorageKey)
+      removeDemoStorageItem(demoPlanId, 'servicios')
     }
 
     window.setTimeout(() => {
-      if (storedValue) {
-        setServicios(storedValue)
-      }
+      setServicios(storedValue ?? initialServicios)
     }, 0)
-  }, [demoMode])
+  }, [demoMode, demoPlanId, initialServicios])
 
   const saveDemoServicios = (nextServicios: ServicioListItem[]) => {
     setServicios(nextServicios)
-    window.localStorage.setItem(demoStorageKey, JSON.stringify(nextServicios))
+    writeDemoStorageItem(demoPlanId, 'servicios', JSON.stringify(nextServicios))
   }
 
   const openCreate = () => {

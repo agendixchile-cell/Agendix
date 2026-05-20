@@ -1,17 +1,9 @@
 import { redirect } from 'next/navigation'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
-import { demoCentro } from '@/lib/centro/demo'
 import { defaultHorariosCentro, normalizeHorarios } from '@/lib/centro/horarios'
 import type { HorarioCentro } from '@/lib/centro/types'
-import { demoEvolucionesSesion } from '@/lib/fichas/demo'
 import type { EvolucionSesionListItem } from '@/lib/fichas/types'
-import {
-  demoReservaPacientes,
-  demoReservaProfesionales,
-  demoReservaSalas,
-  demoReservas,
-  demoReservaServicios,
-} from '@/lib/reservas/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import {
   getDemoSubscriptionContext,
   getOrganizationUsage,
@@ -46,9 +38,11 @@ type ProfesionalOptionQueryRow = {
   descanso_entre_reservas_minutos: number | null
   duracion_sesion_minutos: number | null
   intervalo_reservas_minutos: number | null
+  avatar_url: string | null
   profiles: {
     nombre: string
     email: string
+    avatar_url: string | null
   } | null
 }
 
@@ -79,6 +73,7 @@ function toReservaListItem(row: ReservaQueryRow): ReservaListItem {
       id: row.profiles?.id ?? '',
       nombre: row.profiles?.nombre ?? 'Profesional sin nombre',
       email: row.profiles?.email ?? '',
+      avatar_url: row.profiles?.avatar_url ?? null,
     },
     paciente: {
       id: row.pacientes?.id ?? '',
@@ -105,6 +100,7 @@ function toAgendaBlockListItem(row: AgendaBlockQueryRow): AgendaBlockListItem {
           id: row.profiles.id,
           nombre: row.profiles.nombre,
           email: row.profiles.email,
+          avatar_url: row.profiles.avatar_url,
         }
       : null,
   }
@@ -127,17 +123,18 @@ function emptyReservasData(loadError: string): ReservasPageData {
 export async function getReservasPageData(): Promise<ReservasPageData> {
   if (isDemoMode()) {
     const subscription = await getDemoSubscriptionContext()
+    const dataset = getDemoPlanDataset(subscription.planId)
 
     return {
-      initialReservas: demoReservas,
+      initialReservas: dataset.reservas,
       initialBloqueos: [],
-      initialServicios: demoReservaServicios,
-      initialSalas: demoReservaSalas,
-      initialProfesionales: demoReservaProfesionales,
-      initialPacientes: demoReservaPacientes,
-      initialEvoluciones: demoEvolucionesSesion,
-      initialHorarios: defaultHorariosCentro,
-      publicBookingPath: `/agendar/${demoCentro.slug}`,
+      initialServicios: dataset.reservaServicios,
+      initialSalas: dataset.reservaSalas,
+      initialProfesionales: dataset.reservaProfesionales,
+      initialPacientes: dataset.reservaPacientes,
+      initialEvoluciones: dataset.evoluciones,
+      initialHorarios: dataset.horarios,
+      publicBookingPath: `/agendar/${dataset.centro.slug}`,
       demoMode: true,
       planContext: subscription,
     }
@@ -193,7 +190,7 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
         updated_at,
         servicios!inner(id,nombre,duracion_minutos,precio),
         salas!inner(id,nombre),
-        profiles!reservas_profesional_id_fkey(id,nombre,email),
+        profiles!reservas_profesional_id_fkey(id,nombre,email,avatar_url),
         pacientes!inner(id,nombre,apellido,email,telefono)
       `
     )
@@ -203,7 +200,7 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
   let profesionalesQuery = supabase
     .from('miembros_centro')
     .select(
-      'profile_id,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,profiles!inner(nombre,email)'
+      'profile_id,avatar_url,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,profiles!inner(nombre,email,avatar_url)'
     )
     .eq('centro_id', centroId)
     .eq('activo', true)
@@ -230,7 +227,7 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
         motivo,
         created_at,
         updated_at,
-        profiles!bloqueos_agenda_profesional_id_fkey(id,nombre,email)
+        profiles!bloqueos_agenda_profesional_id_fkey(id,nombre,email,avatar_url)
       `
     )
     .eq('centro_id', centroId)
@@ -314,6 +311,7 @@ export async function getReservasPageData(): Promise<ReservasPageData> {
     id: item.profile_id,
     nombre: item.profiles?.nombre ?? 'Profesional sin nombre',
     email: item.profiles?.email ?? '',
+    avatar_url: item.avatar_url ?? item.profiles?.avatar_url ?? null,
     descanso_entre_reservas_minutos:
       item.descanso_entre_reservas_minutos ?? 0,
     duracion_sesion_minutos: item.duracion_sesion_minutos ?? 60,

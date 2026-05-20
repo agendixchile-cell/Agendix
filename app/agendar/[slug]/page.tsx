@@ -9,10 +9,8 @@ import {
 } from '@/lib/centro/horarios'
 import type { HorarioCentro } from '@/lib/centro/types'
 import type { PublicBookingData } from '@/lib/booking/types'
-import { demoProfesionales } from '@/lib/profesionales/demo'
-import { demoReservas } from '@/lib/reservas/demo'
-import { demoSalas } from '@/lib/salas/demo'
-import { demoServicios } from '@/lib/servicios/demo'
+import { getDemoPlanDataset } from '@/lib/demo-plan-data'
+import { getDemoPlanId } from '@/lib/subscription/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 
@@ -40,6 +38,9 @@ type ServicioRow = {
 
 type ProfesionalRow = {
   profile_id: string
+  especialidad: string | null
+  bio: string | null
+  avatar_url: string | null
   descanso_entre_reservas_minutos: number | null
   duracion_sesion_minutos: number | null
   intervalo_reservas_minutos: number | null
@@ -68,9 +69,11 @@ export async function generateMetadata({
   const { slug } = await params
 
   if (isDemoMode() && slug === demoCentro.slug) {
+    const dataset = getDemoPlanDataset(await getDemoPlanId())
+
     return {
-      title: `Agendar hora | ${demoCentro.nombre}`,
-      description: `Reserva una hora online en ${demoCentro.nombre}.`,
+      title: `Agendar hora | ${dataset.centro.nombre}`,
+      description: `Reserva una hora online en ${dataset.centro.nombre}.`,
     }
   }
 
@@ -104,39 +107,45 @@ async function getPublicBookingData(
   slug: string
 ): Promise<PublicBookingData | null> {
   if (isDemoMode() && slug === demoCentro.slug) {
-    const horarios = normalizeHorarios(defaultHorariosCentro)
+    const planId = await getDemoPlanId()
+    const dataset = getDemoPlanDataset(planId)
+    const horarios = normalizeHorarios(dataset.horarios)
+    const serviceDescriptionById = new Map(
+      dataset.servicios.map((servicio) => [servicio.id, servicio.descripcion])
+    )
 
     return {
       centro: {
-        id: demoCentro.id,
-        nombre: demoCentro.nombre,
-        slug: demoCentro.slug,
+        id: dataset.centro.id,
+        nombre: dataset.centro.nombre,
+        slug: dataset.centro.slug,
         descripcion:
           'Agenda simple para consultas, terapias y sesiones clínicas en un entorno cuidado.',
-        direccion: demoCentro.direccion,
-        telefono: demoCentro.telefono,
-        email: demoCentro.email,
-        logoUrl: demoCentro.logo_url,
+        direccion: dataset.centro.direccion,
+        telefono: dataset.centro.telefono,
+        email: dataset.centro.email,
+        logoUrl: dataset.centro.logo_url,
       },
-      servicios: demoServicios
-        .filter((servicio) => servicio.activo)
+      servicios: dataset.reservaServicios
         .map((servicio) => ({
           id: servicio.id,
           nombre: servicio.nombre,
-          descripcion: servicio.descripcion,
+          descripcion: serviceDescriptionById.get(servicio.id) ?? null,
           duracionMinutos: servicio.duracion_minutos,
           precio: servicio.precio,
           moneda: 'CLP',
-          modalidad: 'presencial',
+          modalidad: servicio.id.endsWith('demo-servicio-3')
+            ? 'online'
+            : 'presencial',
         })),
-      profesionales: demoProfesionales
+      profesionales: dataset.profesionales
         .filter((profesional) => profesional.activo)
         .map((profesional) => ({
           id: profesional.profile_id,
-          nombre: profesional.nombre,
+          nombre: [profesional.nombre, profesional.apellido].filter(Boolean).join(' '),
           especialidad: profesional.especialidad,
           bio: null,
-          avatarUrl: null,
+          avatarUrl: profesional.avatar_url,
           descansoEntreReservasMinutos:
             profesional.descanso_entre_reservas_minutos ?? 0,
           duracionSesionMinutos: profesional.duracion_sesion_minutos ?? 60,
@@ -144,14 +153,19 @@ async function getPublicBookingData(
             profesional.intervalo_reservas_minutos ?? 60,
         })),
       horarios,
-      busySlots: demoReservas.map((reserva) => ({
+      busySlots: dataset.reservas.map((reserva) => ({
         profesionalId: reserva.profesional.id,
         fechaInicio: reserva.fecha_inicio,
         fechaFin: reserva.fecha_fin,
       })),
       scheduleBlocks: [],
-      activeRoomCount: Math.max(1, demoSalas.filter((sala) => sala.activa).length),
+      activeRoomCount: Math.max(
+        1,
+        dataset.reservaSalas.length ||
+          dataset.salas.filter((sala) => sala.activa).length
+      ),
       demoMode: true,
+      demoPlanId: planId,
     }
   }
 
@@ -187,7 +201,7 @@ async function getPublicBookingData(
     supabase
       .from('miembros_centro')
       .select(
-        'profile_id,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,profiles!inner(nombre,apellido,avatar_url)'
+        'profile_id,especialidad,bio,avatar_url,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,profiles!inner(nombre,apellido,avatar_url)'
       )
       .eq('centro_id', centro.id)
       .eq('activo', true)
@@ -257,9 +271,9 @@ async function getPublicBookingData(
         return {
           id: miembro.profile_id,
           nombre,
-          especialidad: null,
-          bio: null,
-          avatarUrl: profile?.avatar_url ?? null,
+          especialidad: miembro.especialidad,
+          bio: miembro.bio,
+          avatarUrl: miembro.avatar_url ?? profile?.avatar_url ?? null,
           descansoEntreReservasMinutos:
             miembro.descanso_entre_reservas_minutos ?? 0,
           duracionSesionMinutos: miembro.duracion_sesion_minutos ?? 60,

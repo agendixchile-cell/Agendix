@@ -58,7 +58,7 @@ const reservaSelect = `
   updated_at,
   servicios!inner(id,nombre,duracion_minutos,precio),
   salas!inner(id,nombre),
-  profiles!reservas_profesional_id_fkey(id,nombre,email),
+  profiles!reservas_profesional_id_fkey(id,nombre,email,avatar_url),
   pacientes!inner(id,nombre,apellido,email,telefono)
 `
 
@@ -89,6 +89,7 @@ function toReservaListItem(row: ReservaQueryRow): ReservaListItem {
       id: row.profiles?.id ?? '',
       nombre: row.profiles?.nombre ?? 'Profesional sin nombre',
       email: row.profiles?.email ?? '',
+      avatar_url: row.profiles?.avatar_url ?? null,
     },
     paciente: {
       id: row.pacientes?.id ?? '',

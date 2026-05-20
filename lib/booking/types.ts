@@ -62,6 +62,7 @@ export type PublicBookingData = {
   scheduleBlocks: PublicScheduleBlock[]
   activeRoomCount: number
   demoMode: boolean
+  demoPlanId?: string
 }
 
 export type PublicBookingResult = {

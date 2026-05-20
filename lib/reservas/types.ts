@@ -19,6 +19,7 @@ export type ReservaProfesionalOption = {
   id: string
   nombre: string
   email: string
+  avatar_url?: string | null
   descanso_entre_reservas_minutos?: number
   duracion_sesion_minutos?: number
   intervalo_reservas_minutos?: number
@@ -78,7 +79,10 @@ export type ReservaQueryRow = Pick<
     | Pick<Database['public']['Tables']['salas']['Row'], 'id' | 'nombre'>
     | null
   profiles:
-    | Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'nombre' | 'email'>
+    | Pick<
+        Database['public']['Tables']['profiles']['Row'],
+        'id' | 'nombre' | 'email' | 'avatar_url'
+      >
     | null
   pacientes:
     | Pick<
@@ -116,7 +120,10 @@ export type AgendaBlockQueryRow = Pick<
   | 'updated_at'
 > & {
   profiles:
-    | Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'nombre' | 'email'>
+    | Pick<
+        Database['public']['Tables']['profiles']['Row'],
+        'id' | 'nombre' | 'email' | 'avatar_url'
+      >
     | null
 }
 

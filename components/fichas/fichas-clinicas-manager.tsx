@@ -29,7 +29,13 @@ import {
   fichaClinicaSchema,
   type FichaClinicaFormValues,
 } from '@/lib/fichas/validation'
+import {
+  readDemoStorageItem,
+  removeDemoStorageItem,
+  writeDemoStorageItem,
+} from '@/lib/demo-storage'
 import type { PacienteListItem } from '@/lib/pacientes/types'
+import type { PlanId } from '@/lib/plans'
 import type { ReservaListItem } from '@/lib/reservas/types'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
@@ -40,10 +46,9 @@ type FichasClinicasManagerProps = {
   initialReservas: ReservaListItem[]
   initialSelectedPacienteId?: string
   demoMode: boolean
+  demoPlanId?: PlanId
   loadError?: string
 }
-
-const demoStorageKey = 'agendix-demo-fichas-clinicas'
 
 function nowIso() {
   return new Date().toISOString()
@@ -88,12 +93,13 @@ export function FichasClinicasManager({
   initialReservas,
   initialSelectedPacienteId,
   demoMode,
+  demoPlanId,
   loadError,
 }: FichasClinicasManagerProps) {
-  const [pacientes] = useState(initialPacientes)
+  const [pacientes, setPacientes] = useState(initialPacientes)
   const [fichas, setFichas] = useState(initialFichas)
-  const [evoluciones] = useState(initialEvoluciones)
-  const [reservas] = useState(initialReservas)
+  const [evoluciones, setEvoluciones] = useState(initialEvoluciones)
+  const [reservas, setReservas] = useState(initialReservas)
   const [search, setSearch] = useState('')
   const [selectedPacienteId, setSelectedPacienteId] = useState(
     initialSelectedPacienteId ?? initialPacientes[0]?.id ?? ''
@@ -112,19 +118,40 @@ export function FichasClinicasManager({
   useEffect(() => {
     if (!demoMode) return
 
-    migrateLegacyAgendixStorage()
+    migrateLegacyAgendixStorage(demoPlanId)
+
+    let storedFichas: FichaClinicaListItem[] | null = null
 
     try {
-      const stored = window.localStorage.getItem(demoStorageKey)
-      if (!stored) return
-      const parsed = JSON.parse(stored)
-      if (Array.isArray(parsed)) {
-        window.setTimeout(() => setFichas(parsed as FichaClinicaListItem[]), 0)
+      const stored = readDemoStorageItem(demoPlanId, 'fichas-clinicas')
+
+      if (stored) {
+        const parsed = JSON.parse(stored)
+
+        if (Array.isArray(parsed)) {
+          storedFichas = parsed as FichaClinicaListItem[]
+        }
       }
     } catch {
-      window.localStorage.removeItem(demoStorageKey)
+      removeDemoStorageItem(demoPlanId, 'fichas-clinicas')
     }
-  }, [demoMode])
+
+    window.setTimeout(() => {
+      setPacientes(initialPacientes)
+      setFichas(storedFichas ?? initialFichas)
+      setEvoluciones(initialEvoluciones)
+      setReservas(initialReservas)
+      setSelectedPacienteId(initialSelectedPacienteId ?? initialPacientes[0]?.id ?? '')
+    }, 0)
+  }, [
+    demoMode,
+    demoPlanId,
+    initialEvoluciones,
+    initialFichas,
+    initialPacientes,
+    initialReservas,
+    initialSelectedPacienteId,
+  ])
 
   const filteredPacientes = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -166,7 +193,11 @@ export function FichasClinicasManager({
 
   const saveDemoFichas = (nextFichas: FichaClinicaListItem[]) => {
     setFichas(nextFichas)
-    window.localStorage.setItem(demoStorageKey, JSON.stringify(nextFichas))
+    writeDemoStorageItem(
+      demoPlanId,
+      'fichas-clinicas',
+      JSON.stringify(nextFichas)
+    )
   }
 
   const resetDemo = () => {

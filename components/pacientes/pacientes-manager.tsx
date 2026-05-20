@@ -15,6 +15,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Tags,
   Trash2,
   UserRound,
   UsersRound,
@@ -48,6 +49,11 @@ import {
   hasFeature,
   type PlanUsageContext,
 } from '@/lib/plans'
+import {
+  readDemoStorageItem,
+  removeDemoStorageItem,
+  writeDemoStorageItem,
+} from '@/lib/demo-storage'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 type PacientesManagerProps = {
@@ -77,8 +83,6 @@ const emptyValues: PacienteFormInput = {
   notas: '',
   activo: true,
 }
-
-const demoStorageKey = 'agendix-demo-pacientes'
 
 function nowIso() {
   return new Date().toISOString()
@@ -124,6 +128,7 @@ export function PacientesManager({
   const [modal, setModal] = useState<ModalState | null>(null)
   const [search, setSearch] = useState('')
   const [isPending, startTransition] = useTransition()
+  const demoPlanId = planContext?.planId
 
   const form = useForm<PacienteFormInput, unknown, PacienteFormValues>({
     resolver: zodResolver(pacienteSchema),
@@ -133,12 +138,12 @@ export function PacientesManager({
   useEffect(() => {
     if (!demoMode) return
 
-    migrateLegacyAgendixStorage()
+    migrateLegacyAgendixStorage(demoPlanId)
 
     let storedValue: PacienteListItem[] | null = null
 
     try {
-      const storedPacientes = window.localStorage.getItem(demoStorageKey)
+      const storedPacientes = readDemoStorageItem(demoPlanId, 'pacientes')
 
       if (storedPacientes) {
         const parsedPacientes = JSON.parse(storedPacientes)
@@ -151,15 +156,13 @@ export function PacientesManager({
         }
       }
     } catch {
-      window.localStorage.removeItem(demoStorageKey)
+      removeDemoStorageItem(demoPlanId, 'pacientes')
     }
 
     window.setTimeout(() => {
-      if (storedValue) {
-        setPacientes(storedValue)
-      }
+      setPacientes(storedValue ?? initialPacientes)
     }, 0)
-  }, [demoMode])
+  }, [demoMode, demoPlanId, initialPacientes])
 
   const filteredPacientes = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -195,7 +198,7 @@ export function PacientesManager({
 
   const saveDemoPacientes = (nextPacientes: PacienteListItem[]) => {
     setPacientes(nextPacientes)
-    window.localStorage.setItem(demoStorageKey, JSON.stringify(nextPacientes))
+    writeDemoStorageItem(demoPlanId, 'pacientes', JSON.stringify(nextPacientes))
   }
 
   const openCreate = () => {
@@ -456,6 +459,40 @@ export function PacientesManager({
           description="Filtros avanzados, historial operativo y segmentación de pacientes están disponibles desde Agendix Center Pro."
           compact
         />
+      )}
+
+      {planContext && hasFeature(planContext.planId, 'advanced_patient_management') && (
+        <section className="grid gap-3 md:grid-cols-3">
+          {[
+            {
+              title: 'Segmentación activa',
+              description: 'Etiquetas demo para priorizar seguimiento y revisar grupos clínicos.',
+              icon: Tags,
+            },
+            {
+              title: 'Historial visible',
+              description: 'Última atención y contexto operativo disponibles para el equipo.',
+              icon: FileText,
+            },
+            {
+              title: 'Asignación profesional',
+              description: 'Pacientes vinculados a profesionales en operación compartida.',
+              icon: UsersRound,
+            },
+          ].map(({ title, description, icon: Icon }) => (
+            <article key={title} className="agendix-surface rounded-2xl p-4">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/70">
+                <Icon size={17} aria-hidden="true" />
+              </span>
+              <h2 className="mt-3 text-sm font-semibold text-slate-900">
+                {title}
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                {description}
+              </p>
+            </article>
+          ))}
+        </section>
       )}
 
       <MetricStrip

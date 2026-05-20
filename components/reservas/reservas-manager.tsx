@@ -40,6 +40,7 @@ import {
 import { saveEvolucionSesionAction } from '@/app/actions/fichas'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EntityImage } from '@/components/ui/entity-image'
 import { FeedbackBanner, type FeedbackMessage } from '@/components/ui/feedback-banner'
 import { Field } from '@/components/ui/field'
 import { FormModal } from '@/components/ui/form-modal'
@@ -48,7 +49,6 @@ import { SearchField } from '@/components/ui/search-field'
 import {
   firstBookableTime,
   getHorarioForDate,
-  horariosCentroStorageKey,
   normalizeHorarios,
   timeRangeOverlapsDescanso,
   timeToMinutes,
@@ -89,6 +89,11 @@ import {
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client'
 import { detectMeetingProvider, toMeetingPayload } from '@/lib/meetings'
 import { hasFeature, type PlanUsageContext } from '@/lib/plans'
+import {
+  readDemoStorageItem,
+  removeDemoStorageItem,
+  writeDemoStorageItem,
+} from '@/lib/demo-storage'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 export type ReservasManagerProps = {
@@ -146,12 +151,6 @@ type DemoState = {
   bloqueos?: AgendaBlockListItem[]
 }
 
-const demoStorageKey = 'agendix-demo-reservas'
-const demoPacientesStorageKey = 'agendix-demo-pacientes'
-const demoServiciosStorageKey = 'agendix-demo-servicios'
-const demoSalasStorageKey = 'agendix-demo-salas'
-const demoProfesionalesStorageKey = 'agendix-demo-profesionales'
-const demoBloqueosStorageKey = 'agendix-demo-bloqueos-agenda'
 const timeFormatOptions = {
   timeZone: appTimeZone,
   hour: '2-digit',
@@ -172,6 +171,7 @@ type StoredDemoProfesional = {
   profile_id: string
   nombre: string
   email: string
+  avatar_url?: string | null
   descanso_entre_reservas_minutos?: number
   duracion_sesion_minutos?: number
   intervalo_reservas_minutos?: number
@@ -496,6 +496,7 @@ export function ReservasManager({
   })
   const [currentTime, setCurrentTime] = useState(() => new Date().getTime())
   const [isPending, startTransition] = useTransition()
+  const demoPlanId = planContext?.planId
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -806,6 +807,9 @@ export function ReservasManager({
   const canUseSharedCalendar = planContext
     ? hasFeature(planContext.planId, 'shared_calendar')
     : true
+  const canUseAttendanceControl = planContext
+    ? hasFeature(planContext.planId, 'attendance_control')
+    : true
 
   const copyPublicLink = async () => {
     if (!publicBookingPath) {
@@ -915,7 +919,7 @@ export function ReservasManager({
   useEffect(() => {
     if (!demoMode) return
 
-    migrateLegacyAgendixStorage()
+    migrateLegacyAgendixStorage(demoPlanId)
 
     let storedValue: DemoState | null = null
     let storedPacientesValue: ReservaPacienteOption[] | null = null
@@ -925,7 +929,7 @@ export function ReservasManager({
     let storedBloqueosValue: AgendaBlockListItem[] | null = null
 
     try {
-      const storedState = window.localStorage.getItem(demoStorageKey)
+      const storedState = readDemoStorageItem(demoPlanId, 'reservas')
 
       if (storedState) {
         const parsedState = JSON.parse(storedState)
@@ -935,7 +939,7 @@ export function ReservasManager({
         }
       }
 
-      const storedPacientes = window.localStorage.getItem(demoPacientesStorageKey)
+      const storedPacientes = readDemoStorageItem(demoPlanId, 'pacientes')
 
       if (storedPacientes) {
         const parsedPacientes = JSON.parse(storedPacientes)
@@ -953,7 +957,7 @@ export function ReservasManager({
         }
       }
 
-      const storedServicios = window.localStorage.getItem(demoServiciosStorageKey)
+      const storedServicios = readDemoStorageItem(demoPlanId, 'servicios')
 
       if (storedServicios) {
         const parsedServicios = JSON.parse(storedServicios)
@@ -970,7 +974,7 @@ export function ReservasManager({
         }
       }
 
-      const storedSalas = window.localStorage.getItem(demoSalasStorageKey)
+      const storedSalas = readDemoStorageItem(demoPlanId, 'salas')
 
       if (storedSalas) {
         const parsedSalas = JSON.parse(storedSalas)
@@ -985,8 +989,9 @@ export function ReservasManager({
         }
       }
 
-      const storedProfesionales = window.localStorage.getItem(
-        demoProfesionalesStorageKey
+      const storedProfesionales = readDemoStorageItem(
+        demoPlanId,
+        'profesionales'
       )
 
       if (storedProfesionales) {
@@ -1001,6 +1006,7 @@ export function ReservasManager({
               id: profesional.profile_id,
               nombre: profesional.nombre,
               email: profesional.email,
+              avatar_url: profesional.avatar_url ?? null,
               descanso_entre_reservas_minutos:
                 profesional.descanso_entre_reservas_minutos ?? 0,
               duracion_sesion_minutos:
@@ -1011,7 +1017,7 @@ export function ReservasManager({
         }
       }
 
-      const storedBloqueos = window.localStorage.getItem(demoBloqueosStorageKey)
+      const storedBloqueos = readDemoStorageItem(demoPlanId, 'bloqueos-agenda')
 
       if (storedBloqueos) {
         const parsedBloqueos = JSON.parse(storedBloqueos)
@@ -1021,54 +1027,55 @@ export function ReservasManager({
         }
       }
     } catch {
-      window.localStorage.removeItem(demoStorageKey)
+      removeDemoStorageItem(demoPlanId, 'reservas')
+      removeDemoStorageItem(demoPlanId, 'pacientes')
+      removeDemoStorageItem(demoPlanId, 'servicios')
+      removeDemoStorageItem(demoPlanId, 'salas')
+      removeDemoStorageItem(demoPlanId, 'profesionales')
+      removeDemoStorageItem(demoPlanId, 'bloqueos-agenda')
     }
 
     window.setTimeout(() => {
-      if (storedValue) {
-        setReservas(
-          storedValue.reservas.map((reserva) => {
-            const estado = normalizeReservaStatus(reserva.estado)
+      setReservas(
+        (storedValue?.reservas ?? initialReservas).map((reserva) => {
+          const estado = normalizeReservaStatus(reserva.estado)
 
-            return {
-              ...reserva,
-              estado,
-              estado_asistencia:
-                reserva.estado_asistencia ?? asistenciaForReservaStatus(estado),
-              meeting_provider: reserva.meeting_provider ?? null,
-              meeting_url: reserva.meeting_url ?? null,
-              auto_generated_meeting: reserva.auto_generated_meeting ?? false,
-            }
-          })
-        )
-        setPacientes(storedValue.pacientes)
-        setEvoluciones(storedValue.evoluciones ?? initialEvoluciones)
-        setBloqueos(storedValue.bloqueos ?? initialBloqueos)
-      }
-      if (storedPacientesValue) {
-        setPacientes(storedPacientesValue)
-      }
-      if (storedServiciosValue) {
-        setServicios(storedServiciosValue)
-      }
-      if (storedSalasValue) {
-        setSalas(storedSalasValue)
-      }
-      if (storedProfesionalesValue) {
-        setProfesionales(storedProfesionalesValue)
-      }
-      if (storedBloqueosValue) {
-        setBloqueos(storedBloqueosValue)
-      }
+          return {
+            ...reserva,
+            estado,
+            estado_asistencia:
+              reserva.estado_asistencia ?? asistenciaForReservaStatus(estado),
+            meeting_provider: reserva.meeting_provider ?? null,
+            meeting_url: reserva.meeting_url ?? null,
+            auto_generated_meeting: reserva.auto_generated_meeting ?? false,
+          }
+        })
+      )
+      setPacientes(storedPacientesValue ?? storedValue?.pacientes ?? initialPacientes)
+      setEvoluciones(storedValue?.evoluciones ?? initialEvoluciones)
+      setBloqueos(storedBloqueosValue ?? storedValue?.bloqueos ?? initialBloqueos)
+      setServicios(storedServiciosValue ?? initialServicios)
+      setSalas(storedSalasValue ?? initialSalas)
+      setProfesionales(storedProfesionalesValue ?? initialProfesionales)
     }, 0)
-  }, [demoMode, initialBloqueos, initialEvoluciones])
+  }, [
+    demoMode,
+    demoPlanId,
+    initialReservas,
+    initialPacientes,
+    initialServicios,
+    initialSalas,
+    initialProfesionales,
+    initialBloqueos,
+    initialEvoluciones,
+  ])
 
   const saveSharedDemoPacientes = (nextPacientes: ReservaPacienteOption[]) => {
     const timestamp = nowIso()
     let storedPacientes: StoredDemoPaciente[] = []
 
     try {
-      const currentStoredPacientes = window.localStorage.getItem(demoPacientesStorageKey)
+      const currentStoredPacientes = readDemoStorageItem(demoPlanId, 'pacientes')
 
       if (currentStoredPacientes) {
         const parsedPacientes = JSON.parse(currentStoredPacientes)
@@ -1104,7 +1111,11 @@ export function ReservasManager({
 
     const sharedPacientes = Array.from(storedById.values())
 
-    window.localStorage.setItem(demoPacientesStorageKey, JSON.stringify(sharedPacientes))
+    writeDemoStorageItem(
+      demoPlanId,
+      'pacientes',
+      JSON.stringify(sharedPacientes)
+    )
   }
 
   const saveDemoState = (
@@ -1117,8 +1128,9 @@ export function ReservasManager({
     setPacientes(nextPacientes)
     setEvoluciones(nextEvoluciones)
     setBloqueos(nextBloqueos)
-    window.localStorage.setItem(
-      demoStorageKey,
+    writeDemoStorageItem(
+      demoPlanId,
+      'reservas',
       JSON.stringify({
         reservas: nextReservas,
         pacientes: nextPacientes,
@@ -1126,8 +1138,9 @@ export function ReservasManager({
         bloqueos: nextBloqueos,
       })
     )
-    window.localStorage.setItem(
-      demoBloqueosStorageKey,
+    writeDemoStorageItem(
+      demoPlanId,
+      'bloqueos-agenda',
       JSON.stringify(nextBloqueos)
     )
     saveSharedDemoPacientes(nextPacientes)
@@ -1153,7 +1166,10 @@ export function ReservasManager({
     if (!demoMode) return normalizeHorarios(initialHorarios)
 
     try {
-      const storedHorariosValue = window.localStorage.getItem(horariosCentroStorageKey)
+      const storedHorariosValue = readDemoStorageItem(
+        demoPlanId,
+        'horarios-centro'
+      )
 
       if (storedHorariosValue) {
         return normalizeHorarios(
@@ -1161,7 +1177,7 @@ export function ReservasManager({
         )
       }
     } catch {
-      window.localStorage.removeItem(horariosCentroStorageKey)
+      removeDemoStorageItem(demoPlanId, 'horarios-centro')
     }
 
     return normalizeHorarios(initialHorarios)
@@ -1852,7 +1868,18 @@ export function ReservasManager({
             onCreate={() => openCreate({ fecha: dateInputValue(), hora: roundedTimeInputValue() })}
             onCopyPublicLink={copyPublicLink}
             onOpenDetail={setSelectedReserva}
-            onComplete={(reserva) => updateEstado(reserva, 'completed')}
+            onComplete={(reserva) => {
+              if (!canUseAttendanceControl) {
+                setFeedback({
+                  type: 'error',
+                  message:
+                    'El control de asistencia está disponible desde Agendix Center Pro.',
+                })
+                return
+              }
+
+              updateEstado(reserva, 'completed')
+            }}
             onEvolucion={openEvolucion}
             onReschedule={openEdit}
           />
@@ -1888,6 +1915,7 @@ export function ReservasManager({
                 selectedDate={selectedDate}
                 initialHorarios={initialHorarios}
                 demoMode={demoMode}
+                demoPlanId={demoPlanId}
                 onOpenReserva={setSelectedReserva}
                 onOpenBlock={setSelectedBlock}
                 onCreateAtSlot={openCreate}
@@ -1922,11 +1950,34 @@ export function ReservasManager({
           hasEvolucion={evoluciones.some(
             (item) => item.reserva_id === selectedReserva.id
           )}
+          canUseAttendanceControl={canUseAttendanceControl}
           onClose={() => setSelectedReserva(null)}
           onEdit={openEdit}
           onConfirm={(reserva) => updateEstado(reserva, 'confirmed')}
-          onComplete={(reserva) => updateEstado(reserva, 'completed')}
-          onNoShow={(reserva) => updateEstado(reserva, 'no_show')}
+          onComplete={(reserva) => {
+            if (!canUseAttendanceControl) {
+              setFeedback({
+                type: 'error',
+                message:
+                  'El control de asistencia está disponible desde Agendix Center Pro.',
+              })
+              return
+            }
+
+            updateEstado(reserva, 'completed')
+          }}
+          onNoShow={(reserva) => {
+            if (!canUseAttendanceControl) {
+              setFeedback({
+                type: 'error',
+                message:
+                  'El control de asistencia está disponible desde Agendix Center Pro.',
+              })
+              return
+            }
+
+            updateEstado(reserva, 'no_show')
+          }}
           onCancel={(reserva) => updateEstado(reserva, 'cancelled')}
           onReschedule={openEdit}
           onEvolucion={openEvolucion}
@@ -2723,6 +2774,7 @@ function CalendarView({
   selectedDate,
   initialHorarios,
   demoMode,
+  demoPlanId,
   onOpenReserva,
   onOpenBlock,
   onCreateAtSlot,
@@ -2734,6 +2786,7 @@ function CalendarView({
   selectedDate: string
   initialHorarios: HorarioCentro[]
   demoMode: boolean
+  demoPlanId?: string | null
   onOpenReserva: (reserva: ReservaListItem) => void
   onOpenBlock: (block: AgendaBlockListItem) => void
   onCreateAtSlot: (slot: SlotSelection) => void
@@ -2772,10 +2825,11 @@ function CalendarView({
 
     let storedHorarios: HorarioCentro[] | null = null
 
-    migrateLegacyAgendixStorage()
-
     try {
-      const storedHorariosValue = window.localStorage.getItem(horariosCentroStorageKey)
+      const storedHorariosValue = readDemoStorageItem(
+        demoPlanId,
+        'horarios-centro'
+      )
 
       if (storedHorariosValue) {
         storedHorarios = normalizeHorarios(
@@ -2783,7 +2837,7 @@ function CalendarView({
         )
       }
     } catch {
-      window.localStorage.removeItem(horariosCentroStorageKey)
+      removeDemoStorageItem(demoPlanId, 'horarios-centro')
     }
 
     window.setTimeout(() => {
@@ -2791,7 +2845,7 @@ function CalendarView({
         setHorarios(storedHorarios)
       }
     }, 0)
-  }, [demoMode])
+  }, [demoMode, demoPlanId])
 
   const hourSlots = useMemo(() => {
     const activeHours = visibleDays.flatMap((day) => {
@@ -3791,9 +3845,16 @@ function ReservationDirectoryRow({
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           Profesional
         </p>
-        <p className="mt-1 text-sm font-medium text-slate-700 [overflow-wrap:anywhere]">
-          {reserva.profesional.nombre}
-        </p>
+        <div className="mt-1 flex min-w-0 items-center gap-2">
+          <EntityImage
+            src={reserva.profesional.avatar_url}
+            name={reserva.profesional.nombre}
+            size="sm"
+          />
+          <p className="min-w-0 text-sm font-medium text-slate-700 [overflow-wrap:anywhere]">
+            {reserva.profesional.nombre}
+          </p>
+        </div>
       </div>
 
       <div className="flex min-w-0 flex-wrap gap-2">
@@ -4109,6 +4170,7 @@ function AppointmentDetailsPanel({
   reserva,
   isPending,
   hasEvolucion,
+  canUseAttendanceControl,
   onClose,
   onEdit,
   onConfirm,
@@ -4122,6 +4184,7 @@ function AppointmentDetailsPanel({
   reserva: ReservaListItem
   isPending: boolean
   hasEvolucion: boolean
+  canUseAttendanceControl: boolean
   onClose: () => void
   onEdit: (reserva: ReservaListItem) => void
   onConfirm: (reserva: ReservaListItem) => void
@@ -4170,7 +4233,19 @@ function AppointmentDetailsPanel({
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
           <div className="grid gap-2.5 rounded-xl bg-slate-50/80 p-4 text-sm ring-1 ring-slate-200/60">
             <DetailRow label="Servicio" value={reserva.servicio.nombre} />
-            <DetailRow label="Profesional" value={reserva.profesional.nombre} />
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Profesional
+              </span>
+              <span className="flex min-w-0 items-center gap-2 text-right font-medium text-slate-700">
+                <EntityImage
+                  src={reserva.profesional.avatar_url}
+                  name={reserva.profesional.nombre}
+                  size="sm"
+                />
+                <span className="min-w-0 truncate">{reserva.profesional.nombre}</span>
+              </span>
+            </div>
             <DetailRow label="Sala" value={reserva.sala.nombre} />
             <DetailRow
               label="Teléfono"
@@ -4211,6 +4286,11 @@ function AppointmentDetailsPanel({
           )}
 
           <div className="grid gap-2">
+            {!canUseAttendanceControl && (
+              <div className="rounded-xl border border-orange-200/70 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
+                Control de asistencia disponible desde Agendix Center Pro.
+              </div>
+            )}
             <Button
               type="button"
               onClick={() => onConfirm(reserva)}
@@ -4224,7 +4304,9 @@ function AppointmentDetailsPanel({
               type="button"
               variant="secondary"
               onClick={() => onComplete(reserva)}
-              disabled={isPending || reserva.estado === 'completed'}
+              disabled={
+                isPending || reserva.estado === 'completed' || !canUseAttendanceControl
+              }
               className="justify-start"
             >
               <CheckCircle2 size={17} aria-hidden="true" />
@@ -4234,7 +4316,9 @@ function AppointmentDetailsPanel({
               type="button"
               variant="secondary"
               onClick={() => onNoShow(reserva)}
-              disabled={isPending || reserva.estado === 'no_show'}
+              disabled={
+                isPending || reserva.estado === 'no_show' || !canUseAttendanceControl
+              }
               className="justify-start"
             >
               <AlertCircle size={17} aria-hidden="true" />

@@ -25,7 +25,7 @@ const agendaBlockSelect = `
   motivo,
   created_at,
   updated_at,
-  profiles!bloqueos_agenda_profesional_id_fkey(id,nombre,email)
+  profiles!bloqueos_agenda_profesional_id_fkey(id,nombre,email,avatar_url)
 `
 
 function toAgendaBlockListItem(row: AgendaBlockQueryRow): AgendaBlockListItem {
@@ -43,6 +43,7 @@ function toAgendaBlockListItem(row: AgendaBlockQueryRow): AgendaBlockListItem {
           id: row.profiles.id,
           nombre: row.profiles.nombre,
           email: row.profiles.email,
+          avatar_url: row.profiles.avatar_url,
         }
       : null,
   }

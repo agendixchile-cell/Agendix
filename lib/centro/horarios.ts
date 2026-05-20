@@ -1,7 +1,5 @@
 import type { DiaSemana, HorarioCentro } from './types'
 
-export const horariosCentroStorageKey = 'agendix-centro-horarios'
-
 export const diasSemana: Array<{
   dia: DiaSemana
   label: string

@@ -29,11 +29,18 @@ import { PageHeader } from '@/components/ui/page-header'
 import { SearchField } from '@/components/ui/search-field'
 import { salaSchema, type SalaFormValues } from '@/lib/salas/validation'
 import type { SalaListItem } from '@/lib/salas/types'
+import {
+  readDemoStorageItem,
+  removeDemoStorageItem,
+  writeDemoStorageItem,
+} from '@/lib/demo-storage'
+import type { PlanId } from '@/lib/plans'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 type SalasManagerProps = {
   initialSalas: SalaListItem[]
   demoMode: boolean
+  demoPlanId?: PlanId
   loadError?: string
 }
 
@@ -54,13 +61,16 @@ const emptyValues: SalaFormValues = {
   activa: true,
 }
 
-const demoStorageKey = 'agendix-demo-salas'
-
 function nowIso() {
   return new Date().toISOString()
 }
 
-export function SalasManager({ initialSalas, demoMode, loadError }: SalasManagerProps) {
+export function SalasManager({
+  initialSalas,
+  demoMode,
+  demoPlanId,
+  loadError,
+}: SalasManagerProps) {
   const router = useRouter()
   const [salas, setSalas] = useState(initialSalas)
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(
@@ -99,12 +109,12 @@ export function SalasManager({ initialSalas, demoMode, loadError }: SalasManager
   useEffect(() => {
     if (!demoMode) return
 
-    migrateLegacyAgendixStorage()
+    migrateLegacyAgendixStorage(demoPlanId)
 
     let storedValue: SalaListItem[] | null = null
 
     try {
-      const storedSalas = window.localStorage.getItem(demoStorageKey)
+      const storedSalas = readDemoStorageItem(demoPlanId, 'salas')
 
       if (storedSalas) {
         const parsedSalas = JSON.parse(storedSalas)
@@ -114,19 +124,17 @@ export function SalasManager({ initialSalas, demoMode, loadError }: SalasManager
         }
       }
     } catch {
-      window.localStorage.removeItem(demoStorageKey)
+      removeDemoStorageItem(demoPlanId, 'salas')
     }
 
     window.setTimeout(() => {
-      if (storedValue) {
-        setSalas(storedValue)
-      }
+      setSalas(storedValue ?? initialSalas)
     }, 0)
-  }, [demoMode])
+  }, [demoMode, demoPlanId, initialSalas])
 
   const saveDemoSalas = (nextSalas: SalaListItem[]) => {
     setSalas(nextSalas)
-    window.localStorage.setItem(demoStorageKey, JSON.stringify(nextSalas))
+    writeDemoStorageItem(demoPlanId, 'salas', JSON.stringify(nextSalas))
   }
 
   const openCreate = () => {
