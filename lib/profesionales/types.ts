@@ -12,11 +12,25 @@ export type ProfesionalListItem = Pick<
   email: string
   telefono: string | null
   especialidad: string | null
+  recordatorio_email_subject: string | null
+  recordatorio_email_body: string | null
+  descanso_entre_reservas_minutos: number
+  duracion_sesion_minutos: number
+  intervalo_reservas_minutos: number
 }
 
 export type ProfesionalQueryRow = Pick<
   MiembroCentroRow,
-  'id' | 'profile_id' | 'rol' | 'activo' | 'created_at' | 'updated_at'
+  | 'id'
+  | 'profile_id'
+  | 'rol'
+  | 'especialidad'
+  | 'descanso_entre_reservas_minutos'
+  | 'duracion_sesion_minutos'
+  | 'intervalo_reservas_minutos'
+  | 'activo'
+  | 'created_at'
+  | 'updated_at'
 > & {
   profiles:
     | Pick<ProfileRow, 'nombre' | 'apellido' | 'email' | 'telefono'>
@@ -35,6 +49,7 @@ export type ProfesionalActionState =
     }
 
 export const profesionalRoleLabels: Record<RolCentro, string> = {
+  owner: 'Owner',
   admin: 'Admin',
   profesional: 'Profesional',
   recepcion: 'Recepción',

@@ -6,14 +6,13 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type RolCentro = 'admin' | 'profesional' | 'recepcion'
+export type RolCentro = 'owner' | 'admin' | 'profesional' | 'recepcion'
 export type EstadoReserva =
-  | 'pendiente'
-  | 'en_espera'
-  | 'confirmada'
-  | 'cancelada'
-  | 'completada'
-  | 'reagendada'
+  | 'pending'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show'
 export type EstadoAsistencia = 'sin_marcar' | 'asistio' | 'no_asistio'
 export type EstadoPago = 'pendiente' | 'pagado' | 'reembolsado'
 export type CanalRecordatorio = 'email' | 'whatsapp'
@@ -33,6 +32,10 @@ export interface Database {
           id: string
           nombre: string
           slug: string
+          owner_user_id: string | null
+          plan_id: string
+          subscription_status: string
+          extra_professionals_count: number
           descripcion: string | null
           rut: string | null
           direccion: string | null
@@ -48,6 +51,10 @@ export interface Database {
           id?: string
           nombre: string
           slug: string
+          owner_user_id?: string | null
+          plan_id?: string
+          subscription_status?: string
+          extra_professionals_count?: number
           descripcion?: string | null
           rut?: string | null
           direccion?: string | null
@@ -63,6 +70,10 @@ export interface Database {
           id?: string
           nombre?: string
           slug?: string
+          owner_user_id?: string | null
+          plan_id?: string
+          subscription_status?: string
+          extra_professionals_count?: number
           descripcion?: string | null
           rut?: string | null
           direccion?: string | null
@@ -119,6 +130,9 @@ export interface Database {
           bio: string | null
           avatar_url: string | null
           public_visible: boolean
+          descanso_entre_reservas_minutos: number
+          duracion_sesion_minutos: number
+          intervalo_reservas_minutos: number
           activo: boolean
           created_at: string
           updated_at: string
@@ -132,6 +146,9 @@ export interface Database {
           bio?: string | null
           avatar_url?: string | null
           public_visible?: boolean
+          descanso_entre_reservas_minutos?: number
+          duracion_sesion_minutos?: number
+          intervalo_reservas_minutos?: number
           activo?: boolean
           created_at?: string
           updated_at?: string
@@ -145,6 +162,9 @@ export interface Database {
           bio?: string | null
           avatar_url?: string | null
           public_visible?: boolean
+          descanso_entre_reservas_minutos?: number
+          duracion_sesion_minutos?: number
+          intervalo_reservas_minutos?: number
           activo?: boolean
           created_at?: string
           updated_at?: string
@@ -271,6 +291,7 @@ export interface Database {
           telefono: string | null
           fecha_nacimiento: string | null
           notas: string | null
+          activo: boolean
           created_at: string
           updated_at: string
         }
@@ -284,6 +305,7 @@ export interface Database {
           telefono?: string | null
           fecha_nacimiento?: string | null
           notas?: string | null
+          activo?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -297,6 +319,7 @@ export interface Database {
           telefono?: string | null
           fecha_nacimiento?: string | null
           notas?: string | null
+          activo?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -331,6 +354,9 @@ export interface Database {
           amount: number | null
           currency: string
           paid_at: string | null
+          meeting_provider: string | null
+          meeting_url: string | null
+          auto_generated_meeting: boolean
           created_at: string
           updated_at: string
         }
@@ -354,6 +380,9 @@ export interface Database {
           amount?: number | null
           currency?: string
           paid_at?: string | null
+          meeting_provider?: string | null
+          meeting_url?: string | null
+          auto_generated_meeting?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -377,6 +406,9 @@ export interface Database {
           amount?: number | null
           currency?: string
           paid_at?: string | null
+          meeting_provider?: string | null
+          meeting_url?: string | null
+          auto_generated_meeting?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -414,6 +446,88 @@ export interface Database {
             columns: ['servicio_id']
             isOneToOne: false
             referencedRelation: 'servicios'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      rate_limit_buckets: {
+        Row: {
+          key_hash: string
+          bucket_count: number
+          reset_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          key_hash: string
+          bucket_count?: number
+          reset_at: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          key_hash?: string
+          bucket_count?: number
+          reset_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      bloqueos_agenda: {
+        Row: {
+          id: string
+          centro_id: string
+          profesional_id: string | null
+          fecha_inicio: string
+          fecha_fin: string
+          motivo: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          centro_id: string
+          profesional_id?: string | null
+          fecha_inicio: string
+          fecha_fin: string
+          motivo?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          centro_id?: string
+          profesional_id?: string | null
+          fecha_inicio?: string
+          fecha_fin?: string
+          motivo?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'bloqueos_agenda_centro_id_fkey'
+            columns: ['centro_id']
+            isOneToOne: false
+            referencedRelation: 'centros'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'bloqueos_agenda_profesional_id_fkey'
+            columns: ['profesional_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'bloqueos_agenda_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
             referencedColumns: ['id']
           },
         ]
@@ -627,6 +741,8 @@ export interface Database {
           email_hours_before: number
           whatsapp_hours_before: number
           whatsapp_mode: 'mock' | 'live'
+          email_subject_template: string
+          email_body_template: string
           created_at: string
           updated_at: string
         }
@@ -638,6 +754,8 @@ export interface Database {
           email_hours_before?: number
           whatsapp_hours_before?: number
           whatsapp_mode?: 'mock' | 'live'
+          email_subject_template?: string
+          email_body_template?: string
           created_at?: string
           updated_at?: string
         }
@@ -649,6 +767,8 @@ export interface Database {
           email_hours_before?: number
           whatsapp_hours_before?: number
           whatsapp_mode?: 'mock' | 'live'
+          email_subject_template?: string
+          email_body_template?: string
           created_at?: string
           updated_at?: string
         }
@@ -658,6 +778,99 @@ export interface Database {
             columns: ['centro_id']
             isOneToOne: false
             referencedRelation: 'centros'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      configuracion_recordatorios_profesional: {
+        Row: {
+          id: string
+          centro_id: string
+          profesional_id: string
+          email_subject_template: string | null
+          email_body_template: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          centro_id: string
+          profesional_id: string
+          email_subject_template?: string | null
+          email_body_template?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          centro_id?: string
+          profesional_id?: string
+          email_subject_template?: string | null
+          email_body_template?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'configuracion_recordatorios_profesional_miembro_fkey'
+            columns: ['centro_id', 'profesional_id']
+            isOneToOne: false
+            referencedRelation: 'miembros_centro'
+            referencedColumns: ['centro_id', 'profile_id']
+          },
+        ]
+      }
+      reserva_confirmaciones: {
+        Row: {
+          id: string
+          reserva_id: string
+          centro_id: string
+          paciente_id: string
+          token: string
+          confirmed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          reserva_id: string
+          centro_id: string
+          paciente_id: string
+          token?: string
+          confirmed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          reserva_id?: string
+          centro_id?: string
+          paciente_id?: string
+          token?: string
+          confirmed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'reserva_confirmaciones_reserva_id_fkey'
+            columns: ['reserva_id']
+            isOneToOne: true
+            referencedRelation: 'reservas'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'reserva_confirmaciones_centro_id_fkey'
+            columns: ['centro_id']
+            isOneToOne: false
+            referencedRelation: 'centros'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'reserva_confirmaciones_paciente_id_fkey'
+            columns: ['paciente_id']
+            isOneToOne: false
+            referencedRelation: 'pacientes'
             referencedColumns: ['id']
           },
         ]
@@ -726,6 +939,62 @@ export interface Database {
           {
             foreignKeyName: 'recordatorio_envios_centro_id_fkey'
             columns: ['centro_id']
+            isOneToOne: false
+            referencedRelation: 'centros'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      subscriptions: {
+        Row: {
+          id: string
+          organization_id: string
+          plan_id: string
+          status: string
+          billing_provider: string | null
+          billing_customer_id: string | null
+          billing_subscription_id: string | null
+          current_period_start: string | null
+          current_period_end: string | null
+          cancel_at_period_end: boolean
+          metadata: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          plan_id: string
+          status?: string
+          billing_provider?: string | null
+          billing_customer_id?: string | null
+          billing_subscription_id?: string | null
+          current_period_start?: string | null
+          current_period_end?: string | null
+          cancel_at_period_end?: boolean
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          plan_id?: string
+          status?: string
+          billing_provider?: string | null
+          billing_customer_id?: string | null
+          billing_subscription_id?: string | null
+          current_period_start?: string | null
+          current_period_end?: string | null
+          cancel_at_period_end?: boolean
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'subscriptions_organization_id_fkey'
+            columns: ['organization_id']
             isOneToOne: false
             referencedRelation: 'centros'
             referencedColumns: ['id']
@@ -861,6 +1130,97 @@ export interface Database {
           centro_telefono: string | null
           servicio_nombre: string
           profesional_nombre: string
+          email_subject_template: string
+          email_body_template: string
+          confirmacion_token: string | null
+        }>
+      }
+      check_rate_limit: {
+        Args: {
+          p_key_hash: string
+          p_limit: number
+          p_window_seconds: number
+          p_now?: string
+        }
+        Returns: Array<{
+          allowed: boolean
+          remaining: number
+          reset_at: string
+          retry_after_seconds: number
+        }>
+      }
+      reschedule_email_reminders_for_centro: {
+        Args: {
+          target_centro_id: string
+        }
+        Returns: number
+      }
+      is_centro_owner: {
+        Args: {
+          target_centro_id: string
+        }
+        Returns: boolean
+      }
+      plan_professional_limit: {
+        Args: {
+          target_plan_id: string
+          extras?: number
+        }
+        Returns: number | null
+      }
+      plan_active_patient_limit: {
+        Args: {
+          target_plan_id: string
+        }
+        Returns: number | null
+      }
+      create_reserva_atomic: {
+        Args: {
+          p_centro_id: string
+          p_profesional_id: string
+          p_paciente_id: string
+          p_servicio_id: string
+          p_fecha_inicio: string
+          p_sala_id?: string | null
+          p_estado?: EstadoReserva
+          p_notas?: string | null
+          p_origen?: string
+          p_modalidad?: string
+          p_payment_status?: string
+          p_amount?: number | null
+          p_currency?: string
+        }
+        Returns: Array<{
+          ok: boolean
+          code: string
+          message: string
+          reserva_id: string | null
+          sala_id: string | null
+          fecha_inicio: string
+          fecha_fin: string | null
+        }>
+      }
+      update_reserva_atomic: {
+        Args: {
+          p_reserva_id: string
+          p_centro_id: string
+          p_profesional_id: string
+          p_paciente_id: string
+          p_servicio_id: string
+          p_fecha_inicio: string
+          p_sala_id: string
+          p_estado?: EstadoReserva
+          p_estado_asistencia?: EstadoAsistencia
+          p_notas?: string | null
+        }
+        Returns: Array<{
+          ok: boolean
+          code: string
+          message: string
+          reserva_id: string | null
+          sala_id: string | null
+          fecha_inicio: string
+          fecha_fin: string | null
         }>
       }
     }

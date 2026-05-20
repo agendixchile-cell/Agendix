@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { isDemoMode } from '@/lib/auth/demo'
+import { revalidateCentroPublicPaths } from '@/lib/centro/public-revalidation'
 import { servicioSchema, type ServicioFormValues } from '@/lib/servicios/validation'
 import type {
   ServicioActionState,
@@ -46,6 +47,15 @@ function supabaseError(message?: string): string {
   return 'No pudimos guardar el servicio. Intenta nuevamente.'
 }
 
+async function revalidateServicioPaths(
+  supabase: Awaited<ReturnType<typeof getCentroId>>['supabase'],
+  centroId: string
+) {
+  revalidatePath('/servicios')
+  revalidatePath('/agenda')
+  await revalidateCentroPublicPaths(supabase, centroId)
+}
+
 export async function createServicioAction(
   values: ServicioFormValues
 ): Promise<ServicioActionState> {
@@ -75,8 +85,7 @@ export async function createServicioAction(
     return { ok: false, message: supabaseError(insertError?.message) }
   }
 
-  revalidatePath('/servicios')
-  revalidatePath('/agenda')
+  await revalidateServicioPaths(supabase, centroId)
 
   return {
     ok: true,
@@ -117,8 +126,7 @@ export async function updateServicioAction(
     return { ok: false, message: supabaseError(updateError?.message) }
   }
 
-  revalidatePath('/servicios')
-  revalidatePath('/agenda')
+  await revalidateServicioPaths(supabase, centroId)
 
   return {
     ok: true,
@@ -162,8 +170,7 @@ export async function toggleServicioAction(
     return { ok: false, message: supabaseError(updateError?.message) }
   }
 
-  revalidatePath('/servicios')
-  revalidatePath('/agenda')
+  await revalidateServicioPaths(supabase, centroId)
 
   return {
     ok: true,

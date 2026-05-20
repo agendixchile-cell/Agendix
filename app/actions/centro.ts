@@ -20,9 +20,15 @@ import type {
   RecordatoriosConfig,
 } from '@/lib/centro/types'
 import { getAdminCentroId } from '@/lib/supabase/get-centro-id'
+import { DEFAULT_EMAIL_REMINDER_HOURS_BEFORE } from '@/lib/reminders/schedule'
 
 const centroSelect =
   'id,nombre,slug,rut,direccion,telefono,email,logo_url,activo,created_at,updated_at'
+const defaultEmailSubjectTemplate = 'Recordatorio de tu hora en {{centro_nombre}}'
+const defaultEmailBodyTemplate =
+  'Hola {{paciente_nombre}}, te recordamos que tienes una hora agendada en {{centro_nombre}}.\n\nServicio: {{servicio_nombre}}\nProfesional: {{profesional_nombre}}\nFecha y hora: {{fecha_hora}}\n\nConfirma tu asistencia desde el boton del correo. Si necesitas cambiar tu hora, contacta directamente al centro.'
+const recordatoriosSelect =
+  'id,centro_id,email_enabled,whatsapp_enabled,email_hours_before,whatsapp_hours_before,whatsapp_mode,email_subject_template,email_body_template,created_at,updated_at'
 
 function defaultRecordatoriosConfig(centroId: string): RecordatoriosConfig {
   const now = new Date().toISOString()
@@ -31,10 +37,12 @@ function defaultRecordatoriosConfig(centroId: string): RecordatoriosConfig {
     id: 'recordatorios-default',
     centro_id: centroId,
     email_enabled: true,
-    whatsapp_enabled: true,
-    email_hours_before: 48,
+    whatsapp_enabled: false,
+    email_hours_before: DEFAULT_EMAIL_REMINDER_HOURS_BEFORE,
     whatsapp_hours_before: 24,
     whatsapp_mode: 'mock',
+    email_subject_template: defaultEmailSubjectTemplate,
+    email_body_template: defaultEmailBodyTemplate,
     created_at: now,
     updated_at: now,
   }
@@ -125,9 +133,7 @@ export async function getRecordatoriosCentro(
 
   const { data, error } = await supabase
     .from('configuracion_recordatorios')
-    .select(
-      'id,centro_id,email_enabled,whatsapp_enabled,email_hours_before,whatsapp_hours_before,whatsapp_mode,created_at,updated_at'
-    )
+    .select(recordatoriosSelect)
     .eq('centro_id', centroId)
     .maybeSingle()
 
@@ -207,15 +213,15 @@ export async function updateRecordatoriosAction(
         centro_id: centroId,
         email_enabled: parsed.data.email_enabled,
         whatsapp_enabled: parsed.data.whatsapp_enabled,
-        email_hours_before: 48,
+        email_hours_before: parsed.data.email_hours_before,
         whatsapp_hours_before: 24,
-        whatsapp_mode: 'mock',
+        whatsapp_mode: parsed.data.whatsapp_enabled ? 'live' : 'mock',
+        email_subject_template: parsed.data.email_subject_template.trim(),
+        email_body_template: parsed.data.email_body_template.trim(),
       },
       { onConflict: 'centro_id' }
     )
-    .select(
-      'id,centro_id,email_enabled,whatsapp_enabled,email_hours_before,whatsapp_hours_before,whatsapp_mode,created_at,updated_at'
-    )
+    .select(recordatoriosSelect)
     .single()
 
   if (upsertError || !data) {
@@ -225,7 +231,13 @@ export async function updateRecordatoriosAction(
     }
   }
 
+  await supabase.rpc('reschedule_email_reminders_for_centro', {
+    target_centro_id: centroId,
+  })
+
   revalidatePath('/centro')
+  revalidatePath('/agenda')
+  revalidatePath('/reservas')
 
   return {
     ok: true,

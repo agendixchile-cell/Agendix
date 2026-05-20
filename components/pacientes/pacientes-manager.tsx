@@ -33,17 +33,28 @@ import { FormModal } from '@/components/ui/form-modal'
 import { MetricStrip } from '@/components/ui/metric-strip'
 import { PageHeader } from '@/components/ui/page-header'
 import { SearchField } from '@/components/ui/search-field'
+import { PlanLimitBanner } from '@/components/plans/plan-limit-banner'
+import { UpgradeCard } from '@/components/plans/upgrade-card'
+import { UsageMeter } from '@/components/plans/usage-meter'
 import type { PacienteListItem } from '@/lib/pacientes/types'
 import {
   pacienteSchema,
+  type PacienteFormInput,
   type PacienteFormValues,
 } from '@/lib/pacientes/validation'
+import {
+  canCreateActivePatient,
+  getPatientLimit,
+  hasFeature,
+  type PlanUsageContext,
+} from '@/lib/plans'
 import { migrateLegacyAgendixStorage } from '@/lib/storage/migrations'
 
 type PacientesManagerProps = {
   initialPacientes: PacienteListItem[]
   demoMode: boolean
   loadError?: string
+  planContext?: PlanUsageContext
 }
 
 type ModalState =
@@ -56,7 +67,7 @@ type ModalState =
       paciente: PacienteListItem
     }
 
-const emptyValues: PacienteFormValues = {
+const emptyValues: PacienteFormInput = {
   nombre: '',
   apellido: '',
   rut: '',
@@ -64,6 +75,7 @@ const emptyValues: PacienteFormValues = {
   telefono: '',
   fecha_nacimiento: '',
   notas: '',
+  activo: true,
 }
 
 const demoStorageKey = 'agendix-demo-pacientes'
@@ -102,6 +114,7 @@ export function PacientesManager({
   initialPacientes,
   demoMode,
   loadError,
+  planContext,
 }: PacientesManagerProps) {
   const router = useRouter()
   const [pacientes, setPacientes] = useState(initialPacientes)
@@ -112,7 +125,7 @@ export function PacientesManager({
   const [search, setSearch] = useState('')
   const [isPending, startTransition] = useTransition()
 
-  const form = useForm<PacienteFormValues>({
+  const form = useForm<PacienteFormInput, unknown, PacienteFormValues>({
     resolver: zodResolver(pacienteSchema),
     defaultValues: emptyValues,
   })
@@ -131,7 +144,10 @@ export function PacientesManager({
         const parsedPacientes = JSON.parse(storedPacientes)
 
         if (Array.isArray(parsedPacientes)) {
-          storedValue = parsedPacientes as PacienteListItem[]
+          storedValue = (parsedPacientes as PacienteListItem[]).map((paciente) => ({
+            ...paciente,
+            activo: paciente.activo !== false,
+          }))
         }
       }
     } catch {
@@ -166,6 +182,11 @@ export function PacientesManager({
     })
   }, [pacientes, search])
 
+  const activeCount = pacientes.filter((paciente) => paciente.activo !== false).length
+  const inactiveCount = pacientes.length - activeCount
+  const patientLimit = planContext ? getPatientLimit(planContext.planId) : null
+  const reachedPatientLimit =
+    patientLimit !== null && activeCount >= patientLimit
   const withContactCount = pacientes.filter(
     (paciente) => paciente.email || paciente.telefono
   ).length
@@ -179,7 +200,17 @@ export function PacientesManager({
 
   const openCreate = () => {
     setFeedback(null)
-    form.reset(emptyValues)
+    form.reset({
+      ...emptyValues,
+      activo: !reachedPatientLimit,
+    })
+    if (reachedPatientLimit) {
+      setFeedback({
+        type: 'error',
+        message:
+          'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.',
+      })
+    }
     setModal({ mode: 'create' })
   }
 
@@ -193,6 +224,7 @@ export function PacientesManager({
       telefono: paciente.telefono ?? '',
       fecha_nacimiento: paciente.fecha_nacimiento ?? '',
       notas: paciente.notas ?? '',
+      activo: paciente.activo,
     })
     setModal({ mode: 'edit', paciente })
   }
@@ -261,6 +293,24 @@ export function PacientesManager({
     }
 
     if (modal?.mode === 'edit') {
+      const activatingPaciente = values.activo && modal.paciente.activo === false
+
+      if (demoMode && activatingPaciente && planContext) {
+        const capacity = canCreateActivePatient({
+          planId: planContext.planId,
+          currentActivePatients: activeCount,
+        })
+
+        if (!capacity.allowed) {
+          setFeedback({
+            type: 'error',
+            message:
+              'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.',
+          })
+          return
+        }
+      }
+
       const updatedPaciente: PacienteListItem = {
         ...modal.paciente,
         nombre: values.nombre.trim(),
@@ -270,6 +320,7 @@ export function PacientesManager({
         telefono: values.telefono?.trim() || null,
         fecha_nacimiento: values.fecha_nacimiento || null,
         notas: values.notas?.trim() || null,
+        activo: values.activo,
         updated_at: nowIso(),
       }
 
@@ -283,6 +334,22 @@ export function PacientesManager({
       return
     }
 
+    if (demoMode && values.activo && planContext) {
+      const capacity = canCreateActivePatient({
+        planId: planContext.planId,
+        currentActivePatients: activeCount,
+      })
+
+      if (!capacity.allowed) {
+        setFeedback({
+          type: 'error',
+          message:
+            'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.',
+        })
+        return
+      }
+    }
+
     const timestamp = nowIso()
     const nuevoPaciente: PacienteListItem = {
       id: demoId('demo-paciente'),
@@ -293,6 +360,7 @@ export function PacientesManager({
       telefono: values.telefono?.trim() || null,
       fecha_nacimiento: values.fecha_nacimiento || null,
       notas: values.notas?.trim() || null,
+      activo: values.activo,
       created_at: timestamp,
       updated_at: timestamp,
     }
@@ -363,14 +431,48 @@ export function PacientesManager({
         <FeedbackBanner feedback={feedback} onClose={() => setFeedback(null)} />
       )}
 
+      {reachedPatientLimit && (
+        <PlanLimitBanner
+          title="Límite de pacientes activos alcanzado"
+          description="Tu plan Individual permite hasta 50 pacientes activos. Puedes inactivar pacientes o mejorar tu plan para seguir creciendo."
+        />
+      )}
+
+      {planContext && (
+        <UsageMeter
+          label="Pacientes activos"
+          value={activeCount}
+          limit={patientLimit}
+          helper={`Plan ${planContext.plan.shortName}`}
+          tone="green"
+        />
+      )}
+
+      {planContext && !hasFeature(planContext.planId, 'advanced_patient_management') && (
+        <UpgradeCard
+          planId={planContext.planId}
+          feature="advanced_patient_management"
+          title="Gestión avanzada de pacientes"
+          description="Filtros avanzados, historial operativo y segmentación de pacientes están disponibles desde Agendix Center Pro."
+          compact
+        />
+      )}
+
       <MetricStrip
         variant="cards"
         items={[
           {
-            label: 'Total',
-            value: pacientes.length,
-            description: 'Fichas registradas en el centro.',
+            label: 'Activos',
+            value: activeCount,
+            description: 'Pacientes activos para límites del plan.',
             icon: UsersRound,
+          },
+          {
+            label: 'Inactivos',
+            value: inactiveCount,
+            description: 'Archivados sin perder historial.',
+            icon: CalendarClock,
+            tone: 'slate',
           },
           {
             label: 'Con contacto',
@@ -521,6 +623,15 @@ export function PacientesManager({
               />
             </Field>
 
+            <label className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5 text-sm font-medium text-slate-700">
+              <span>Paciente activo</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-orange-300 text-orange-600 focus:ring-orange-500"
+                {...form.register('activo')}
+              />
+            </label>
+
             <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
               <Button type="button" variant="secondary" onClick={closeModal}>
                 Cancelar
@@ -560,6 +671,7 @@ function PacientesList({
               <th className="px-4 py-3 font-medium">Paciente</th>
               <th className="px-4 py-3 font-medium">Contacto</th>
               <th className="px-4 py-3 font-medium">Identificación</th>
+              <th className="px-4 py-3 font-medium">Estado</th>
               <th className="px-4 py-3 font-medium">Notas</th>
               <th className="px-4 py-3 text-right font-medium">Acciones</th>
             </tr>
@@ -600,6 +712,11 @@ function PacientesList({
                   ) : (
                     <span className="text-sm text-slate-400">—</span>
                   )}
+                </td>
+                <td className="px-4 py-4">
+                  <Badge tone={paciente.activo ? 'green' : 'slate'}>
+                    {paciente.activo ? 'Activo' : 'Inactivo'}
+                  </Badge>
                 </td>
                 <td className="max-w-xs px-4 py-4 text-sm leading-5 text-slate-500">
                   <p className="line-clamp-2 [overflow-wrap:anywhere]">
@@ -658,7 +775,12 @@ function PacientesList({
                   </p>
                 </div>
               </div>
-              {paciente.rut && <Badge tone="slate">{paciente.rut}</Badge>}
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <Badge tone={paciente.activo ? 'green' : 'slate'}>
+                  {paciente.activo ? 'Activo' : 'Inactivo'}
+                </Badge>
+                {paciente.rut && <Badge tone="slate">{paciente.rut}</Badge>}
+              </div>
             </div>
 
             {paciente.notas && (

@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-const defaultRedirectPath = '/agenda'
+const DEFAULT_REDIRECT_PATH = '/agenda'
 
 function getSafeRedirectPath(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) {
-    return defaultRedirectPath
+    return DEFAULT_REDIRECT_PATH
   }
 
   return value
@@ -25,5 +25,8 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(new URL('/login', requestUrl.origin))
+  const loginUrl = new URL('/login', requestUrl.origin)
+  loginUrl.searchParams.set('authError', 'callback')
+
+  return NextResponse.redirect(loginUrl)
 }

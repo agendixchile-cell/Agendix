@@ -88,6 +88,9 @@ function recordatoriosFormValues(
   return {
     email_enabled: recordatorios.email_enabled,
     whatsapp_enabled: recordatorios.whatsapp_enabled,
+    email_hours_before: recordatorios.email_hours_before ?? 24,
+    email_subject_template: recordatorios.email_subject_template,
+    email_body_template: recordatorios.email_body_template,
   }
 }
 
@@ -123,6 +126,7 @@ function activeDaysLabel(horarios: HorarioCentro[]) {
 }
 
 function roleLabel(rol: RolCentro) {
+  if (rol === 'owner') return 'Owner'
   if (rol === 'admin') return 'Administrador'
   if (rol === 'recepcion') return 'Recepción'
 
@@ -146,7 +150,7 @@ export function CentroManager({
   )
   const [isPending, startTransition] = useTransition()
 
-  const canEditCentro = demoMode || rol === 'admin'
+  const canEditCentro = demoMode || rol === 'owner' || rol === 'admin'
   const score = completionScore(centro)
   const activeDays = activeDaysLabel(horarios)
   const weeklyHours = weeklyHoursLabel(horarios)
@@ -173,6 +177,26 @@ export function CentroManager({
     useWatch({
       control: recordatoriosForm.control,
     }) ?? recordatoriosFormValues(recordatorios)
+  const watchedEmailReminderHours = Number(watchedRecordatorios.email_hours_before)
+  const emailReminderHours = Number.isFinite(watchedEmailReminderHours)
+    ? watchedEmailReminderHours
+    : 24
+
+  useEffect(() => {
+    if (demoMode) return
+
+    centroForm.reset(centroFormValues(initialCentro))
+    horariosForm.reset({ horarios: normalizeHorarios(initialHorarios) })
+    recordatoriosForm.reset(recordatoriosFormValues(initialRecordatorios))
+  }, [
+    centroForm,
+    demoMode,
+    horariosForm,
+    initialCentro,
+    initialHorarios,
+    initialRecordatorios,
+    recordatoriosForm,
+  ])
 
   useEffect(() => {
     if (!demoMode) return
@@ -203,23 +227,27 @@ export function CentroManager({
       window.localStorage.removeItem(recordatoriosStorageKey)
     }
 
+    const nextCentro = storedCentro ?? initialCentro
+    const nextHorarios = storedHorarios ?? normalizeHorarios(initialHorarios)
+    const nextRecordatorios = storedRecordatorios ?? initialRecordatorios
+
     window.setTimeout(() => {
-      if (storedCentro) {
-        setCentro(storedCentro)
-        centroForm.reset(centroFormValues(storedCentro))
-      }
-
-      if (storedHorarios) {
-        setHorarios(storedHorarios)
-        horariosForm.reset({ horarios: storedHorarios })
-      }
-
-      if (storedRecordatorios) {
-        setRecordatorios(storedRecordatorios)
-        recordatoriosForm.reset(recordatoriosFormValues(storedRecordatorios))
-      }
+      setCentro(nextCentro)
+      centroForm.reset(centroFormValues(nextCentro))
+      setHorarios(nextHorarios)
+      horariosForm.reset({ horarios: nextHorarios })
+      setRecordatorios(nextRecordatorios)
+      recordatoriosForm.reset(recordatoriosFormValues(nextRecordatorios))
     }, 0)
-  }, [centroForm, demoMode, horariosForm, recordatoriosForm])
+  }, [
+    centroForm,
+    demoMode,
+    horariosForm,
+    initialCentro,
+    initialHorarios,
+    initialRecordatorios,
+    recordatoriosForm,
+  ])
 
   const saveDemoCentro = (values: CentroFormValues) => {
     const updatedCentro: CentroConfig = {
@@ -304,6 +332,9 @@ export function CentroManager({
         ...recordatorios,
         email_enabled: values.email_enabled,
         whatsapp_enabled: values.whatsapp_enabled,
+        email_hours_before: values.email_hours_before,
+        email_subject_template: values.email_subject_template.trim(),
+        email_body_template: values.email_body_template.trim(),
         updated_at: nowIso(),
       }
 
@@ -573,7 +604,7 @@ export function CentroManager({
                 Recordatorios automáticos
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Agendix prepara email 48h antes y WhatsApp 24h antes de cada reserva.
+                Agendix prepara email con confirmación y mantiene WhatsApp como canal pendiente.
               </p>
             </div>
           </div>
@@ -595,7 +626,7 @@ export function CentroManager({
         >
           <ReminderToggle
             icon={Mail}
-            title="Email 48 horas antes"
+            title={`Email ${emailReminderHours} horas antes`}
             description="Envía un correo con el resumen de la reserva usando Resend."
             enabled={!!watchedRecordatorios.email_enabled}
             disabled={!canEditCentro}
@@ -604,17 +635,80 @@ export function CentroManager({
           <ReminderToggle
             icon={MessageCircle}
             title="WhatsApp 24 horas antes"
-            description="Listo para WhatsApp Business Cloud API; funciona en modo mock sin credenciales."
+            description="Canal preparado para cuando esté activa la integración de WhatsApp."
             enabled={!!watchedRecordatorios.whatsapp_enabled}
             disabled={!canEditCentro}
             inputProps={recordatoriosForm.register('whatsapp_enabled')}
           />
+
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 lg:col-span-2">
+            <Field
+              label="Anticipación del correo"
+              error={recordatoriosForm.formState.errors.email_hours_before?.message}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  step={1}
+                  className="agendix-input sm:max-w-40"
+                  disabled={!canEditCentro}
+                  aria-invalid={
+                    recordatoriosForm.formState.errors.email_hours_before
+                      ? 'true'
+                      : 'false'
+                  }
+                  {...recordatoriosForm.register('email_hours_before', {
+                    valueAsNumber: true,
+                  })}
+                />
+                <span className="text-sm font-medium text-slate-500">
+                  horas antes de la cita
+                </span>
+              </div>
+            </Field>
+          </div>
+
+          <div className="space-y-4 lg:col-span-2">
+            <Field
+              label="Asunto del correo"
+              error={recordatoriosForm.formState.errors.email_subject_template?.message}
+            >
+              <input
+                type="text"
+                className="agendix-input"
+                disabled={!canEditCentro}
+                aria-invalid={
+                  recordatoriosForm.formState.errors.email_subject_template
+                    ? 'true'
+                    : 'false'
+                }
+                {...recordatoriosForm.register('email_subject_template')}
+              />
+            </Field>
+
+            <Field
+              label="Mensaje del correo"
+              error={recordatoriosForm.formState.errors.email_body_template?.message}
+            >
+              <textarea
+                rows={7}
+                className="agendix-input min-h-40 resize-y leading-6"
+                disabled={!canEditCentro}
+                aria-invalid={
+                  recordatoriosForm.formState.errors.email_body_template
+                    ? 'true'
+                    : 'false'
+                }
+                {...recordatoriosForm.register('email_body_template')}
+              />
+            </Field>
+          </div>
         </form>
 
         <div className="border-t border-slate-200/80 bg-orange-50/30 px-5 py-3 text-sm text-slate-600">
-          Los recordatorios no se envían si la reserva está cancelada. WhatsApp queda en modo{' '}
-          <span className="font-semibold text-slate-800">{recordatorios.whatsapp_mode}</span>{' '}
-          hasta configurar credenciales reales.
+          Los mensajes no se envían si la reserva está cancelada o si la hora ya venció.
         </div>
       </section>
 
@@ -691,7 +785,7 @@ export function CentroManager({
                     </span>
                     <input
                       type="time"
-                      className="agendix-input mt-1"
+                      className="agendix-time-input mt-1"
                       disabled={!activo}
                       {...horariosForm.register(`horarios.${index}.inicio`)}
                     />
@@ -707,7 +801,7 @@ export function CentroManager({
                     </span>
                     <input
                       type="time"
-                      className="agendix-input mt-1"
+                      className="agendix-time-input mt-1"
                       disabled={!activo}
                       {...horariosForm.register(`horarios.${index}.fin`)}
                     />
@@ -748,7 +842,7 @@ export function CentroManager({
                       </span>
                       <input
                         type="time"
-                        className="agendix-input mt-1"
+                        className="agendix-time-input mt-1"
                         disabled={!activo}
                         {...horariosForm.register(`horarios.${index}.descanso_inicio`)}
                       />
@@ -764,7 +858,7 @@ export function CentroManager({
                       </span>
                       <input
                         type="time"
-                        className="agendix-input mt-1"
+                        className="agendix-time-input mt-1"
                         disabled={!activo}
                         {...horariosForm.register(`horarios.${index}.descanso_fin`)}
                       />

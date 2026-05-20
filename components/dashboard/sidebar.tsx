@@ -3,8 +3,10 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  Building2,
   CalendarDays,
   ClipboardList,
+  CreditCard,
   Settings,
   UsersRound,
 } from 'lucide-react'
@@ -18,10 +20,16 @@ const navGroups = [
       { href: '/agenda', label: 'Agenda', icon: CalendarDays },
       { href: '/pacientes', label: 'Pacientes', icon: UsersRound },
       { href: '/reservas', label: 'Reservas', icon: ClipboardList, match: ['/reservas'] },
+      { href: '/admin', label: 'Administración', icon: Building2 },
       { href: '/configuracion', label: 'Configuración', icon: Settings },
+      { href: '/configuracion/plan', label: 'Mi plan', icon: CreditCard },
     ],
   },
 ]
+
+function matchesPath(pathname: string, path: string) {
+  return pathname === path || pathname.startsWith(`${path}/`)
+}
 
 type SidebarProps = {
   collapsed?: boolean
@@ -39,6 +47,11 @@ export function Sidebar({
   sessionLabel = 'Sesión activa',
 }: SidebarProps) {
   const pathname = usePathname()
+  const activeHref =
+    navGroups
+      .flatMap((group) => group.items)
+      .filter((item) => (item.match ?? [item.href]).some((path) => matchesPath(pathname, path)))
+      .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null
 
   return (
     <div className="flex h-full flex-col">
@@ -59,11 +72,8 @@ export function Sidebar({
               {group.label}
             </p>
             <div className="space-y-0.5">
-              {group.items.map(({ href, label, icon: Icon, match }) => {
-                const activePaths = match ?? [href]
-                const active = activePaths.some(
-                  (path) => pathname === path || pathname.startsWith(`${path}/`)
-                )
+              {group.items.map(({ href, label, icon: Icon }) => {
+                const active = href === activeHref
 
                 return (
                   <Link

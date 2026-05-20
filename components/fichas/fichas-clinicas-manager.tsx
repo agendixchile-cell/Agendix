@@ -149,7 +149,11 @@ export function FichasClinicasManager({
     : undefined
 
   const selectedReservas = selectedPaciente
-    ? reservas.filter((reserva) => reserva.paciente.id === selectedPaciente.id)
+    ? reservas.filter(
+        (reserva) =>
+          reserva.paciente.id === selectedPaciente.id &&
+          reserva.estado !== 'cancelled'
+      )
     : []
 
   const selectedEvoluciones = selectedPaciente
@@ -245,7 +249,7 @@ export function FichasClinicasManager({
     <div className="space-y-5">
       <PageHeader
         title="Fichas clínicas"
-        description="Selecciona un paciente para ver o editar su ficha. Registra antecedentes, notas y evolución de cada sesión."
+        description="Selecciona un paciente para ver o editar su ficha clínica y registrar la información de agenda."
         eyebrow="Registro clínico"
         icon={ClipboardList}
         meta={demoMode && <Badge tone="slate">Modo demo</Badge>}
@@ -344,19 +348,19 @@ export function FichasClinicasManager({
 
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
                   <FichaBlock
-                    title="Antecedentes relevantes"
-                    value={selectedFicha?.antecedentes_relevantes}
-                  />
-                  <FichaBlock
-                    title="Motivo de consulta"
+                    title="Historia clínica"
                     value={selectedFicha?.motivo_consulta}
                   />
                   <FichaBlock
-                    title="Diagnóstico o hipótesis"
+                    title="Tratamiento"
                     value={selectedFicha?.diagnostico_hipotesis}
                   />
                   <FichaBlock
-                    title="Notas clínicas generales"
+                    title="Antecedentes"
+                    value={selectedFicha?.antecedentes_relevantes}
+                  />
+                  <FichaBlock
+                    title="Configuración"
                     value={selectedFicha?.notas_clinicas}
                   />
                 </div>
@@ -384,9 +388,9 @@ export function FichasClinicasManager({
                 </HistoryPanel>
 
                 <HistoryPanel
-                  title="Evoluciones"
+                  title="Fichas de agenda"
                   icon={FileText}
-                  empty="Sin evoluciones registradas"
+                  empty="Sin ficha clínica registrada"
                 >
                   {selectedEvoluciones.map((evolucion) => (
                     <div
@@ -401,7 +405,7 @@ export function FichasClinicasManager({
                       </p>
                       {evolucion.proximos_pasos && (
                         <p className="mt-2 text-sm text-slate-500">
-                          Próximos pasos: {evolucion.proximos_pasos}
+                          Tratamiento: {evolucion.proximos_pasos}
                         </p>
                       )}
                     </div>
@@ -423,49 +427,49 @@ export function FichasClinicasManager({
             <input type="hidden" {...form.register('paciente_id')} />
 
             <Field
-              label="Antecedentes relevantes"
-              error={form.formState.errors.antecedentes_relevantes?.message}
-            >
-              <textarea
-                rows={3}
-                className="agendix-input min-h-24 resize-none"
-                placeholder="Antecedentes médicos, familiares, tratamientos o alertas relevantes"
-                {...form.register('antecedentes_relevantes')}
-              />
-            </Field>
-
-            <Field
-              label="Motivo de consulta"
+              label="Historia clínica"
               error={form.formState.errors.motivo_consulta?.message}
             >
               <textarea
                 rows={3}
-                className="agendix-input min-h-24 resize-none"
-                placeholder="Motivo principal por el que consulta el paciente"
+                className="agendix-input min-h-28 resize-y"
+                placeholder="Historia clínica, motivo principal y detalle libre de la ficha"
                 {...form.register('motivo_consulta')}
               />
             </Field>
 
             <Field
-              label="Diagnóstico o hipótesis clínica"
+              label="Tratamiento"
               error={form.formState.errors.diagnostico_hipotesis?.message}
             >
               <textarea
                 rows={3}
-                className="agendix-input min-h-24 resize-none"
-                placeholder="Hipótesis inicial, diagnóstico de trabajo o impresión clínica"
+                className="agendix-input min-h-24 resize-y"
+                placeholder="Tratamiento, plan, objetivos o seguimiento"
                 {...form.register('diagnostico_hipotesis')}
               />
             </Field>
 
             <Field
-              label="Notas clínicas generales"
+              label="Antecedentes"
+              error={form.formState.errors.antecedentes_relevantes?.message}
+            >
+              <textarea
+                rows={3}
+                className="agendix-input min-h-24 resize-y"
+                placeholder="Antecedentes médicos, familiares, tratamientos previos o alertas"
+                {...form.register('antecedentes_relevantes')}
+              />
+            </Field>
+
+            <Field
+              label="Configuración"
               error={form.formState.errors.notas_clinicas?.message}
             >
               <textarea
                 rows={4}
-                className="agendix-input min-h-28 resize-none"
-                placeholder="Notas generales de la ficha clínica"
+                className="agendix-input min-h-28 resize-y"
+                placeholder="Notas internas, configuración del caso o información que quieras ordenar a tu manera"
                 {...form.register('notas_clinicas')}
               />
             </Field>

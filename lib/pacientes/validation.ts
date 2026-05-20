@@ -36,6 +36,8 @@ export const pacienteSchema = z.object({
     .trim()
     .max(500, 'Las notas no pueden superar 500 caracteres')
     .optional(),
+  activo: z.boolean().default(true),
 })
 
-export type PacienteFormValues = z.infer<typeof pacienteSchema>
+export type PacienteFormInput = z.input<typeof pacienteSchema>
+export type PacienteFormValues = z.output<typeof pacienteSchema>

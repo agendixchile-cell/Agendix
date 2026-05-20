@@ -45,7 +45,7 @@ export default async function DashboardLayout({
             sessionLabel={sessionLabel}
           />
           <div className="absolute left-1/2 -translate-x-1/2">
-            <AgendixWordmark className="h-10 w-44 sm:h-11 sm:w-48" />
+            <AgendixWordmark preload className="h-10 w-44 sm:h-11 sm:w-48" />
           </div>
           {/* Spacer para balancear el botón de menú a la izquierda */}
           <div className="h-9 w-9" aria-hidden="true" />

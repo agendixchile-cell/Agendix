@@ -12,6 +12,7 @@ export type PacienteListItem = Pick<
   | 'telefono'
   | 'fecha_nacimiento'
   | 'notas'
+  | 'activo'
   | 'created_at'
   | 'updated_at'
 >

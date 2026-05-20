@@ -1,18 +1,21 @@
 import type { HorarioCentro } from '@/lib/centro/types'
 import { timeRangeOverlapsDescanso } from '@/lib/centro/horarios'
 import type {
+  PublicBookingProfessional,
   PublicBookingService,
   PublicBusySlot,
+  PublicScheduleBlock,
 } from '@/lib/booking/types'
+import { zonedDateKey, zonedDateTime } from '@/lib/timezone'
 
-export const bookingSlotStepMinutes = 15
+export const defaultBookingSlotStepMinutes = 60
 
 function pad(value: number) {
   return String(value).padStart(2, '0')
 }
 
 export function dateInputValue(date = new Date()) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  return zonedDateKey(date)
 }
 
 export function isoToLocalDate(value: string) {
@@ -37,7 +40,7 @@ export function minutesToTime(value: number) {
 }
 
 export function localDateTime(fecha: string, hora: string) {
-  return new Date(`${fecha}T${hora}:00`)
+  return zonedDateTime(fecha, hora)
 }
 
 export function formatBookingDate(value: string) {
@@ -90,6 +93,41 @@ export function generateBookingDays({
   })
 }
 
+export function normalizeBreakMinutes(value: number | null | undefined) {
+  if (!Number.isFinite(value)) return 0
+
+  return Math.max(0, Math.trunc(value ?? 0))
+}
+
+function normalizePositiveMinutes(
+  value: number | null | undefined,
+  fallback: number
+) {
+  if (!Number.isFinite(value)) return fallback
+
+  return Math.max(5, Math.trunc(value ?? fallback))
+}
+
+export function getEffectiveSessionDuration({
+  servicio,
+  profesional,
+}: {
+  servicio: PublicBookingService
+  profesional: PublicBookingProfessional
+}) {
+  return normalizePositiveMinutes(
+    profesional.duracionSesionMinutos,
+    servicio.duracionMinutos
+  )
+}
+
+export function getProfessionalSlotStep(profesional: PublicBookingProfessional) {
+  return normalizePositiveMinutes(
+    profesional.intervaloReservasMinutos,
+    defaultBookingSlotStepMinutes
+  )
+}
+
 function overlaps(start: Date, end: Date, busy: PublicBusySlot) {
   const busyStart = new Date(busy.fechaInicio)
   const busyEnd = new Date(busy.fechaFin)
@@ -97,22 +135,66 @@ function overlaps(start: Date, end: Date, busy: PublicBusySlot) {
   return start < busyEnd && end > busyStart
 }
 
+function overlapsScheduleBlock({
+  start,
+  end,
+  block,
+  profesionalId,
+}: {
+  start: Date
+  end: Date
+  block: PublicScheduleBlock
+  profesionalId: string
+}) {
+  if (block.profesionalId && block.profesionalId !== profesionalId) {
+    return false
+  }
+
+  const blockStart = new Date(block.fechaInicio)
+  const blockEnd = new Date(block.fechaFin)
+
+  return start < blockEnd && end > blockStart
+}
+
+export function overlapsWithProfessionalBreak({
+  start,
+  end,
+  busyStart,
+  busyEnd,
+  breakMinutes,
+}: {
+  start: Date
+  end: Date
+  busyStart: Date
+  busyEnd: Date
+  breakMinutes: number
+}) {
+  const breakMs = normalizeBreakMinutes(breakMinutes) * 60_000
+
+  return (
+    start.getTime() < busyEnd.getTime() + breakMs &&
+    end.getTime() + breakMs > busyStart.getTime()
+  )
+}
+
 export function getAvailableSlots({
   fecha,
   servicio,
-  profesionalId,
+  profesional,
   horarios,
   busySlots,
+  scheduleBlocks,
   activeRoomCount,
 }: {
   fecha: string
   servicio: PublicBookingService | null
-  profesionalId: string
+  profesional: PublicBookingProfessional | null
   horarios: HorarioCentro[]
   busySlots: PublicBusySlot[]
+  scheduleBlocks: PublicScheduleBlock[]
   activeRoomCount: number
 }) {
-  if (!fecha || !servicio || !profesionalId) return []
+  if (!fecha || !servicio || !profesional) return []
 
   const day = isoToLocalDate(fecha)
   const horario = getHorarioForDate(day, horarios)
@@ -121,18 +203,26 @@ export function getAvailableSlots({
 
   const startMinutes = timeToMinutes(horario.inicio)
   const endMinutes = timeToMinutes(horario.fin)
+  const sessionDurationMinutes = getEffectiveSessionDuration({
+    servicio,
+    profesional,
+  })
+  const slotStepMinutes = Math.max(
+    getProfessionalSlotStep(profesional),
+    sessionDurationMinutes
+  )
   const slots: string[] = []
 
   for (
     let minute = startMinutes;
-    minute + servicio.duracionMinutos <= endMinutes;
-    minute += bookingSlotStepMinutes
+    minute + sessionDurationMinutes <= endMinutes;
+    minute += slotStepMinutes
   ) {
     if (
       timeRangeOverlapsDescanso(
         horario,
         minute,
-        minute + servicio.duracionMinutos
+        minute + sessionDurationMinutes
       )
     ) {
       continue
@@ -141,16 +231,42 @@ export function getAvailableSlots({
     const hora = minutesToTime(minute)
     const slotStart = localDateTime(fecha, hora)
     const slotEnd = new Date(
-      slotStart.getTime() + servicio.duracionMinutos * 60_000
+      slotStart.getTime() + sessionDurationMinutes * 60_000
     )
 
     if (slotStart.getTime() <= Date.now()) continue
 
-    const hasConflict = busySlots.some((busySlot) => {
-      const sameProfessional = busySlot.profesionalId === profesionalId
-      const roomLimited = activeRoomCount <= 1
+    const hasScheduleBlock = scheduleBlocks.some((block) =>
+      overlapsScheduleBlock({
+        start: slotStart,
+        end: slotEnd,
+        block,
+        profesionalId: profesional.id,
+      })
+    )
 
-      return (sameProfessional || roomLimited) && overlaps(slotStart, slotEnd, busySlot)
+    if (hasScheduleBlock) continue
+
+    const overlappingRoomCount = busySlots.filter((busySlot) =>
+      overlaps(slotStart, slotEnd, busySlot)
+    ).length
+
+    if (overlappingRoomCount >= Math.max(1, activeRoomCount)) continue
+
+    const hasConflict = busySlots.some((busySlot) => {
+      const sameProfessional = busySlot.profesionalId === profesional.id
+
+      if (sameProfessional) {
+        return overlapsWithProfessionalBreak({
+          start: slotStart,
+          end: slotEnd,
+          busyStart: new Date(busySlot.fechaInicio),
+          busyEnd: new Date(busySlot.fechaFin),
+          breakMinutes: profesional.descansoEntreReservasMinutos,
+        })
+      }
+
+      return false
     })
 
     if (!hasConflict) {

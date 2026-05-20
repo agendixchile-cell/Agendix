@@ -13,7 +13,7 @@ type GetClinicalCentroIdResult =
       supabase: Awaited<ReturnType<typeof createClient>>
       centroId: string
       profileId: string
-      rol: 'admin' | 'profesional'
+      rol: 'owner' | 'admin' | 'profesional'
       error?: never
     }
   | {
@@ -71,7 +71,7 @@ export async function getAdminCentroId(recurso = 'este recurso'): Promise<GetAdm
     return { supabase, error: 'No encontramos un centro asociado a tu usuario.' }
   }
 
-  if (data.rol !== 'admin') {
+  if (data.rol !== 'owner' && data.rol !== 'admin') {
     return {
       supabase,
       error: `Solo administradores pueden actualizar ${recurso}.`,
@@ -105,7 +105,11 @@ export async function getClinicalCentroId(
     return { supabase, error: 'No encontramos un centro asociado a tu usuario.' }
   }
 
-  if (data.rol !== 'admin' && data.rol !== 'profesional') {
+  if (
+    data.rol !== 'owner' &&
+    data.rol !== 'admin' &&
+    data.rol !== 'profesional'
+  ) {
     return {
       supabase,
       error: `Tu rol no puede acceder a ${recurso}.`,

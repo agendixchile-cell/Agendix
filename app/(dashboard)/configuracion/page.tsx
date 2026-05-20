@@ -23,6 +23,11 @@ import { defaultHorariosCentro } from '@/lib/centro/horarios'
 import { demoProfesionales } from '@/lib/profesionales/demo'
 import { demoSalas } from '@/lib/salas/demo'
 import { demoServicios } from '@/lib/servicios/demo'
+import { subscriptionStatusLabels } from '@/lib/plans'
+import {
+  getDemoSubscriptionContext,
+  getPlanSnapshotForCentro,
+} from '@/lib/subscription/server'
 import { createClient } from '@/lib/supabase/server'
 import type { RolCentro } from '@/lib/types/database'
 
@@ -54,15 +59,17 @@ function countLabel(count: number, singular: string, plural: string) {
 
 function recordatoriosStatus({
   emailEnabled,
+  emailHoursBefore,
   whatsappEnabled,
   whatsappMode,
 }: {
   emailEnabled: boolean
+  emailHoursBefore: number
   whatsappEnabled: boolean
   whatsappMode: string
 }) {
   const enabled = [
-    emailEnabled ? 'email' : '',
+    emailEnabled ? `email ${emailHoursBefore}h` : '',
     whatsappEnabled ? 'WhatsApp' : '',
   ].filter(Boolean)
 
@@ -109,6 +116,7 @@ async function getRealConfigData() {
       salasCount: 0,
       horariosStatus: 'Horario pendiente',
       recordatoriosText: 'Pendiente de configurar',
+      planText: 'Individual · Trial',
     }
   }
 
@@ -119,6 +127,7 @@ async function getRealConfigData() {
     salas,
     horarios,
     recordatorios,
+    planSnapshot,
   ] = await Promise.all([
     supabase
       .from('servicios')
@@ -130,7 +139,7 @@ async function getRealConfigData() {
       .select('id', { count: 'exact', head: true })
       .eq('centro_id', centroId)
       .eq('activo', true)
-      .in('rol', ['admin', 'profesional']),
+      .in('rol', ['owner', 'admin', 'profesional']),
     supabase
       .from('salas')
       .select('id', { count: 'exact', head: true })
@@ -142,6 +151,7 @@ async function getRealConfigData() {
       .eq('centro_id', centroId)
       .order('dia', { ascending: true }),
     getRecordatoriosCentro(centroId),
+    getPlanSnapshotForCentro(supabase, centroId),
   ])
 
   return {
@@ -158,13 +168,17 @@ async function getRealConfigData() {
         : 'Horario pendiente',
     recordatoriosText: recordatoriosStatus({
       emailEnabled: recordatorios.email_enabled,
+      emailHoursBefore: recordatorios.email_hours_before,
       whatsappEnabled: recordatorios.whatsapp_enabled,
       whatsappMode: recordatorios.whatsapp_mode,
     }),
+    planText: `${planSnapshot.plan.shortName} · ${subscriptionStatusLabels[planSnapshot.status]}`,
   }
 }
 
-function getDemoConfigData() {
+async function getDemoConfigData() {
+  const subscription = await getDemoSubscriptionContext()
+
   return {
     centroNombre: demoCentro.nombre,
     slug: demoCentro.slug,
@@ -178,15 +192,17 @@ function getDemoConfigData() {
     horariosStatus: activeDaysLabel(defaultHorariosCentro),
     recordatoriosText: recordatoriosStatus({
       emailEnabled: demoRecordatoriosConfig.email_enabled,
+      emailHoursBefore: demoRecordatoriosConfig.email_hours_before,
       whatsappEnabled: demoRecordatoriosConfig.whatsapp_enabled,
       whatsappMode: demoRecordatoriosConfig.whatsapp_mode,
     }),
+    planText: `${subscription.plan.shortName} · ${subscriptionStatusLabels[subscription.status]}`,
   }
 }
 
 export default async function ConfiguracionPage() {
   const demoMode = isDemoMode()
-  const data = demoMode ? getDemoConfigData() : await getRealConfigData()
+  const data = demoMode ? await getDemoConfigData() : await getRealConfigData()
   const publicBookingPath = `/agendar/${data.slug}`
 
   const cards: SettingsCardProps[] = [
@@ -238,7 +254,7 @@ export default async function ConfiguracionPage() {
     },
     {
       title: 'Recordatorios',
-      description: 'Email 48h antes y WhatsApp 24h antes de cada reserva.',
+      description: 'Email configurable con confirmación de asistencia.',
       status: data.recordatoriosText,
       actionLabel: 'Configurar',
       href: '/centro#recordatorios',
@@ -254,6 +270,15 @@ export default async function ConfiguracionPage() {
       icon: Globe2,
       tone: 'green',
       external: true,
+    },
+    {
+      title: 'Plan y facturación',
+      description: 'Plan actual, uso contra límites y preparación para suscripciones.',
+      status: data.planText,
+      actionLabel: 'Ver mi plan',
+      href: '/configuracion/plan',
+      icon: CreditCard,
+      tone: 'orange',
     },
     {
       title: 'Pagos',

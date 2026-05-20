@@ -56,7 +56,7 @@ export function DesktopSidebar({
           {collapsed ? (
             <AgendixSymbol size="sm" />
           ) : (
-            <AgendixWordmark className="h-14 w-52 sm:h-14 sm:w-52" />
+            <AgendixWordmark preload className="h-14 w-52 sm:h-14 sm:w-52" />
           )}
           <button
             type="button"
