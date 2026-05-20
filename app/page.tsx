@@ -15,7 +15,6 @@ import {
   Database,
   Globe2,
   HeartPulse,
-  LayoutDashboard,
   LineChart,
   Lock,
   Menu,
@@ -138,7 +137,7 @@ function SectionHeading({
       </Eyebrow>
       <h2
         className={cn(
-          'text-3xl font-bold leading-tight text-slate-950 sm:text-4xl',
+          'text-3xl font-bold leading-tight text-[#171615] sm:text-4xl',
           dark && 'text-white'
         )}
       >
@@ -205,7 +204,7 @@ function Header() {
             <a
               key={link.label}
               href={link.href}
-              className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+              className="text-sm font-medium text-slate-600 transition-colors hover:text-[#171615]"
             >
               {link.label}
             </a>
@@ -240,7 +239,7 @@ function Header() {
       </div>
 
       {open && (
-        <div className="absolute inset-x-0 top-16 border-b border-slate-200/70 bg-white p-4 shadow-lg shadow-slate-900/[0.05] md:hidden">
+        <div className="absolute inset-x-0 top-16 border-b border-slate-200/70 bg-white p-4 shadow-lg shadow-black/[0.05] md:hidden">
           <nav className="mb-4 flex flex-col gap-1">
             {navLinks.map((link) => (
               <a
@@ -315,7 +314,7 @@ function HeroWorkspace() {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl shadow-slate-900/[0.12]">
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl shadow-black/[0.10]">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-orange-400" />
@@ -326,7 +325,7 @@ function HeroWorkspace() {
       </div>
 
       <div className="grid lg:grid-cols-[210px_1fr_280px]">
-        <aside className="hidden border-r border-slate-100 bg-slate-950 p-4 text-white lg:block">
+        <aside className="hidden border-r border-slate-100 bg-[#111111] p-4 text-white lg:block">
           <div className="mb-6 flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-xs font-bold">
               A
@@ -349,7 +348,7 @@ function HeroWorkspace() {
                 className={cn(
                   'mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium',
                   label === 'Agenda'
-                    ? 'bg-white text-slate-950'
+                    ? 'bg-white text-[#171615]'
                     : 'text-white/60'
                 )}
               >
@@ -366,7 +365,7 @@ function HeroWorkspace() {
               <p className="text-xs font-semibold uppercase text-slate-400">
                 Agenda del día
               </p>
-              <h3 className="text-lg font-bold text-slate-950">Martes 13 de mayo</h3>
+              <h3 className="text-lg font-bold text-[#171615]">Martes 13 de mayo</h3>
             </div>
             <div className="flex gap-2 overflow-x-auto">
               {['Todos', 'Dra. Torres', 'Dr. Molina'].map((tab, index) => (
@@ -425,7 +424,7 @@ function HeroWorkspace() {
         <aside className="border-t border-slate-100 bg-white p-4 sm:p-5 lg:border-l lg:border-t-0">
           <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
             {[
-              ['18', 'Reservas hoy', 'text-slate-950'],
+              ['18', 'Reservas hoy', 'text-[#171615]'],
               ['4', 'Profesionales', 'text-sky-600'],
               ['92%', 'Asistencia', 'text-emerald-600'],
             ].map(([value, label, color]) => (
@@ -439,7 +438,7 @@ function HeroWorkspace() {
           <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center gap-2">
               <MonitorPlay size={16} className="text-orange-500" />
-              <p className="text-sm font-semibold text-slate-900">Atención online</p>
+              <p className="text-sm font-semibold text-[#171615]">Atención online</p>
             </div>
             <p className="text-xs leading-5 text-slate-500">
               Enlaces Meet o Zoom listos para telemedicina y reuniones de equipo
@@ -461,13 +460,12 @@ function Hero() {
             <Sparkles size={13} aria-hidden="true" />
             SaaS HealthTech para operar con más orden
           </Badge>
-          <h1 className="max-w-4xl text-4xl font-bold leading-[1.06] text-slate-950 sm:text-5xl lg:text-6xl">
+          <h1 className="max-w-4xl text-4xl font-bold leading-[1.06] text-[#171615] sm:text-5xl lg:text-6xl">
             Gestiona tu agenda, pacientes y reservas sin complicarte.
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            Agendix centraliza la operación diaria de profesionales y centros de
-            salud: agenda clínica, reservas online, pacientes, equipo,
-            asistencia y control en un solo panel.
+            Agendix centraliza agenda clínica, reservas online, pacientes,
+            equipo, asistencia y control en un solo panel.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Button asChild size="lg" className="w-full sm:w-auto">
@@ -489,30 +487,6 @@ function Hero() {
         <div className="mt-12">
           <HeroWorkspace />
         </div>
-      </div>
-    </section>
-  )
-}
-
-function AudienceBar() {
-  const items = [
-    ['Profesionales independientes', 'Agenda y pacientes bajo control desde el primer día.'],
-    ['Centros pequeños', 'Equipo, salas y reservas coordinadas sin planillas.'],
-    ['Clínicas y equipos grandes', 'Base escalable para operación multidisciplinaria.'],
-  ]
-
-  return (
-    <section className="border-y border-slate-200/70 bg-white py-8">
-      <div className="mx-auto grid max-w-[1200px] gap-4 px-4 sm:px-6 md:grid-cols-3 lg:px-8">
-        {items.map(([title, copy]) => (
-          <div key={title} className="flex items-start gap-3">
-            <CheckCircle size={18} className="mt-0.5 shrink-0 text-emerald-500" />
-            <div>
-              <p className="text-sm font-semibold text-slate-900">{title}</p>
-              <p className="mt-1 text-sm leading-6 text-slate-500">{copy}</p>
-            </div>
-          </div>
-        ))}
       </div>
     </section>
   )
@@ -560,10 +534,10 @@ function Problem() {
           {pains.map((pain) => (
             <article
               key={pain.title}
-              className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm shadow-slate-900/[0.035]"
+              className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm shadow-black/[0.035]"
             >
               <IconBadge icon={pain.icon} tone={pain.tone} />
-              <h3 className="mt-5 text-lg font-bold leading-6 text-slate-950">
+              <h3 className="mt-5 text-lg font-bold leading-6 text-[#171615]">
                 {pain.title}
               </h3>
               <p className="mt-3 text-sm leading-6 text-slate-600">{pain.desc}</p>
@@ -625,7 +599,7 @@ function Solution() {
               title="Una plataforma simple para ordenar la operación clínica completa."
               description="Agendix reúne lo que normalmente vive separado: agenda, pacientes, reservas, equipo, salas, permisos, estadísticas y atención online."
             />
-            <div className="mt-8 rounded-lg bg-slate-950 p-6 text-white shadow-xl shadow-slate-900/[0.12]">
+            <div className="mt-8 rounded-lg bg-[#111111] p-6 text-white shadow-xl shadow-black/[0.12]">
               <p className="text-sm font-semibold text-orange-200">
                 Resultado esperado
               </p>
@@ -643,7 +617,7 @@ function Solution() {
                 className="rounded-lg border border-slate-200/80 bg-[#FAFAF8] p-5"
               >
                 <IconBadge icon={item.icon} tone={item.tone} />
-                <h3 className="mt-4 text-base font-bold text-slate-950">
+                <h3 className="mt-4 text-base font-bold text-[#171615]">
                   {item.title}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{item.desc}</p>
@@ -694,7 +668,7 @@ function HowItWorks() {
           {steps.map((step, index) => (
             <article
               key={step.title}
-              className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm shadow-slate-900/[0.035]"
+              className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm shadow-black/[0.035]"
             >
               <div className="flex items-center justify-between">
                 <IconBadge icon={step.icon} tone={index === 3 ? 'emerald' : 'orange'} />
@@ -702,7 +676,7 @@ function HowItWorks() {
                   0{index + 1}
                 </span>
               </div>
-              <h3 className="mt-5 text-base font-bold text-slate-950">{step.title}</h3>
+              <h3 className="mt-5 text-base font-bold text-[#171615]">{step.title}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">{step.desc}</p>
             </article>
           ))}
@@ -758,7 +732,7 @@ function CustomerTypes() {
               <Badge tone={type.tone === 'emerald' ? 'green' : type.tone === 'sky' ? 'blue' : type.tone}>
                 {type.label}
               </Badge>
-              <h3 className="mt-5 text-lg font-bold text-slate-950">{type.title}</h3>
+              <h3 className="mt-5 text-lg font-bold text-[#171615]">{type.title}</h3>
               <p className="mt-3 text-sm leading-6 text-slate-600">{type.desc}</p>
             </article>
           ))}
@@ -796,10 +770,10 @@ function Features() {
           {features.map(([Icon, title, desc, tone]) => (
             <article
               key={title}
-              className="rounded-lg border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-900/[0.025]"
+              className="rounded-lg border border-slate-200/80 bg-white p-5 shadow-sm shadow-black/[0.025]"
             >
               <IconBadge icon={Icon} tone={tone as Tone} />
-              <h3 className="mt-4 text-sm font-bold text-slate-950">{title}</h3>
+              <h3 className="mt-4 text-sm font-bold text-[#171615]">{title}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">{desc}</p>
             </article>
           ))}
@@ -824,7 +798,7 @@ function PricingCard({ plan }: { plan: PlanDefinition }) {
         'relative flex min-h-full flex-col rounded-lg border bg-white p-6 shadow-sm',
         isRecommended
           ? 'border-orange-300 shadow-xl shadow-orange-900/[0.08] ring-1 ring-orange-200'
-          : 'border-slate-200/80 shadow-slate-900/[0.03]'
+          : 'border-slate-200/80 shadow-black/[0.03]'
       )}
     >
       <div className="mb-5 flex min-h-7 items-start justify-between gap-3">
@@ -834,7 +808,7 @@ function PricingCard({ plan }: { plan: PlanDefinition }) {
       </div>
 
       <div>
-        <h3 className="text-xl font-bold text-slate-950">{plan.commercialName}</h3>
+        <h3 className="text-xl font-bold text-[#171615]">{plan.commercialName}</h3>
         <p className="mt-2 min-h-12 text-sm leading-6 text-slate-600">
           {plan.audience}
         </p>
@@ -842,7 +816,7 @@ function PricingCard({ plan }: { plan: PlanDefinition }) {
 
       <div className="mt-6 border-y border-slate-100 py-5">
         <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
-          <span className="text-4xl font-bold tracking-tight text-slate-950">
+          <span className="text-4xl font-bold tracking-tight text-[#171615]">
             {formatPlanPrice(plan.monthlyPriceClp)}
           </span>
           <span className="pb-1 text-sm font-medium text-slate-500">CLP / mes</span>
@@ -888,7 +862,7 @@ function Pricing() {
             description="Planes claros para partir solo, coordinar un centro pequeño o crecer hacia equipos con métricas, asistencia y telemedicina."
           />
           <div className="rounded-lg bg-[#F7FAF8] p-5 ring-1 ring-slate-200/80">
-            <p className="text-sm font-semibold text-slate-950">Recomendación comercial</p>
+            <p className="text-sm font-semibold text-[#171615]">Recomendación comercial</p>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               Si ya coordinas varios profesionales o quieres visibilidad del
               centro, <strong>Agendix Center Pro</strong> concentra mejor valor:
@@ -919,7 +893,7 @@ function PlanComparison() {
           <Badge tone="orange">Center Pro recomendado</Badge>
         </div>
 
-        <div className="mt-8 overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.04]">
+        <div className="mt-8 overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-black/[0.04]">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">
               <thead className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase text-slate-400">
@@ -986,11 +960,6 @@ function Differentiators() {
       desc: 'Planes por etapa de crecimiento, con profesional extra definido para Center y Center Pro.',
     },
     {
-      icon: LayoutDashboard,
-      title: 'Interfaz moderna y enfocada',
-      desc: 'Menos módulos innecesarios, más foco en lo que el equipo usa todos los días.',
-    },
-    {
       icon: Building2,
       title: 'Escala con tu equipo',
       desc: 'Parte con una consulta individual y crece hacia centros y clínicas con profesionales ilimitados.',
@@ -998,16 +967,16 @@ function Differentiators() {
   ]
 
   return (
-    <section className="bg-slate-950 py-18 text-white sm:py-24">
+    <section className="bg-[#111111] py-16 text-white sm:py-20">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="Por qué Agendix"
           title="Más operativo que una agenda simple. Más liviano que un software clínico complejo."
-          description="La propuesta no es reemplazar todo tu negocio con un sistema difícil: es ordenar lo que bloquea tu día a día para que el equipo pueda atender mejor."
+          description="Ordena lo que bloquea el día a día sin sumar un sistema pesado al equipo."
           dark
         />
 
-        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {reasons.map((reason) => (
             <article
               key={reason.title}
@@ -1025,13 +994,6 @@ function Differentiators() {
 }
 
 function Trust() {
-  // Reemplazar estos placeholders cuando existan testimonios aprobados de clientes.
-  const testimonialPlaceholders = [
-    'Profesional independiente',
-    'Centro de salud pequeño',
-    'Equipo multidisciplinario',
-  ]
-
   const trustItems = [
     [ShieldCheck, 'Conexión cifrada', 'La comunicación ocurre por HTTPS y con una arquitectura moderna.'],
     [Lock, 'Acceso por roles', 'Administrador, recepción y profesionales pueden tener permisos diferenciados.'],
@@ -1045,7 +1007,7 @@ function Trust() {
           <SectionHeading
             eyebrow="Confianza"
             title="Una base seria para una operación que no puede depender del desorden."
-            description="Mientras se recopilan testimonios públicos, la página evita inventar cifras y destaca fundamentos reales del producto: seguridad, roles y centralización."
+            description="Seguridad, roles y datos centralizados para que la operación no dependa de planillas o chats."
           />
 
           <div className="grid gap-4">
@@ -1056,7 +1018,7 @@ function Trust() {
               >
                 <IconBadge icon={Icon} tone="emerald" />
                 <div>
-                  <h3 className="text-base font-bold text-slate-950">{title}</h3>
+                  <h3 className="text-base font-bold text-[#171615]">{title}</h3>
                   <p className="mt-1 text-sm leading-6 text-slate-600">{desc}</p>
                 </div>
               </div>
@@ -1064,22 +1026,6 @@ function Trust() {
           </div>
         </div>
 
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {testimonialPlaceholders.map((label) => (
-            <article
-              key={label}
-              className="rounded-lg border border-dashed border-slate-300 bg-slate-50/70 p-5"
-            >
-              <p className="text-xs font-semibold uppercase text-slate-400">
-                Testimonio pendiente
-              </p>
-              <p className="mt-4 text-sm leading-6 text-slate-500">
-                Espacio reservado para incorporar una cita real de {label.toLowerCase()}
-                cuando exista aprobación para publicarla.
-              </p>
-            </article>
-          ))}
-        </div>
       </div>
     </section>
   )
@@ -1104,7 +1050,7 @@ function FAQItem({
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
-        <span className="text-base font-bold leading-snug text-slate-950">
+        <span className="text-base font-bold leading-snug text-[#171615]">
           {question}
         </span>
         <ChevronDown
@@ -1161,13 +1107,13 @@ function FAQ() {
             <SectionHeading
               eyebrow="Preguntas frecuentes"
               title="Dudas clave antes de ordenar tu operación."
-              description="La página prioriza respuestas comerciales claras para que un visitante entienda rápido si Agendix calza con su etapa."
+              description="Respuestas simples para decidir si Agendix calza con tu consulta, centro o equipo."
             />
             <Button asChild variant="secondary" className="mt-8">
               <a href="mailto:contacto@agendixchile.cl">Escribir a Agendix</a>
             </Button>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-5 shadow-sm shadow-slate-900/[0.035]">
+          <div className="rounded-lg border border-slate-200 bg-white px-5 shadow-sm shadow-black/[0.035]">
             {faqs.map((faq, index) => (
               <FAQItem
                 key={faq.q}
@@ -1187,7 +1133,7 @@ function CTAFinal() {
   return (
     <section className="bg-white py-16 sm:py-24">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <div className="overflow-hidden rounded-lg bg-slate-950 px-6 py-12 text-center text-white shadow-2xl shadow-slate-900/[0.16] sm:px-10 sm:py-16">
+        <div className="overflow-hidden rounded-lg bg-[#111111] px-6 py-12 text-center text-white shadow-2xl shadow-black/[0.16] sm:px-10 sm:py-16">
           <Eyebrow dark className="mb-4 text-orange-300">
             Siguiente paso
           </Eyebrow>
@@ -1271,7 +1217,7 @@ function Footer() {
                     <li key={link.label}>
                       <a
                         href={link.href}
-                        className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+                        className="text-sm font-medium text-slate-600 transition-colors hover:text-[#171615]"
                       >
                         {link.label}
                       </a>
@@ -1296,7 +1242,6 @@ export default function LandingPage() {
     <main className="min-h-screen overflow-x-hidden bg-white">
       <Header />
       <Hero />
-      <AudienceBar />
       <Problem />
       <Solution />
       <HowItWorks />
