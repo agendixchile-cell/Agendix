@@ -407,7 +407,7 @@ export async function updateProfesionalAction(
 
   const { data: membership, error: membershipError } = await supabase
     .from('miembros_centro')
-    .select('id,profile_id,avatar_url,profiles!inner(avatar_url)')
+    .select('id,profile_id,avatar_url,activo,profiles!inner(avatar_url)')
     .eq('id', id)
     .eq('centro_id', centroId)
     .maybeSingle()
@@ -418,6 +418,14 @@ export async function updateProfesionalAction(
 
   if (!membership?.profile_id) {
     return { ok: false, message: 'No pudimos identificar al profesional.' }
+  }
+
+  if (parsed.data.activo && membership.activo === false) {
+    const capacity = await validateProfessionalCapacity(supabase, centroId)
+
+    if (!capacity.ok) {
+      return { ok: false, message: capacity.message }
+    }
   }
 
   const normalizedAvatarUrl = normalizePublicImageUrl(avatarUrl)

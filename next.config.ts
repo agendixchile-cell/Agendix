@@ -8,14 +8,16 @@ const APP_ONLY_AUTH_PREFIXES = ["login", "register", "auth"];
 const APP_ONLY_PREFIXES = [
   "dashboard",
   "agenda",
+  "admin",
   "centro",
+  "configuracion",
+  "estadisticas",
   "salas",
   "profesionales",
   "servicios",
   "reservas",
   "pacientes",
   "fichas-clinicas",
-  "estadisticas",
 ];
 
 function hostHas(value: string) {

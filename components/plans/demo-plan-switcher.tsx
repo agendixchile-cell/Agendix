@@ -25,8 +25,6 @@ export function DemoPlanSwitcher({
   className,
   surface = 'card',
 }: DemoPlanSwitcherProps) {
-  if (process.env.NODE_ENV === 'production') return null
-
   if (collapsed) {
     const initialPlan = subscriptionPlans[currentPlanId]
 

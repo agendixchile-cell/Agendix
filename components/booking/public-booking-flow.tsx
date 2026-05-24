@@ -356,7 +356,7 @@ export function PublicBookingFlow({
           precio: selectedService.precio?.toString() ?? '',
           payment_method: values.payment_method,
           payment_status:
-            values.payment_method === 'online' ? 'paid' : 'pending',
+            values.payment_method === 'online' ? 'disabled' : 'pending',
         })
         router.push(`/agendar/${slug}/confirmacion?${params.toString()}`)
         return
@@ -725,6 +725,7 @@ function ServiceStep({
             <button
               key={service.id}
               type="button"
+              onPointerDown={() => onSelect(service.id)}
               onClick={() => onSelect(service.id)}
               className={`w-full rounded-2xl border p-3.5 text-left transition ${
                 selected
@@ -795,6 +796,7 @@ function ProfessionalStep({
             <button
               key={professional.id}
               type="button"
+              onPointerDown={() => onSelect(professional.id)}
               onClick={() => onSelect(professional.id)}
               className={`rounded-2xl border p-3.5 text-left transition ${
                 selected
@@ -894,6 +896,9 @@ function DateTimeStep({
               key={day.value}
               type="button"
               disabled={disabled}
+              onPointerDown={() => {
+                if (!disabled) onDateChange(day.value)
+              }}
               onClick={() => onDateChange(day.value)}
               className={`rounded-2xl border px-3 py-2.5 text-left transition ${
                 selected
@@ -935,6 +940,7 @@ function DateTimeStep({
                 <button
                   key={slot}
                   type="button"
+                  onPointerDown={() => onHourChange(slot)}
                   onClick={() => onHourChange(slot)}
                   className={`h-10 rounded-xl border text-sm font-semibold transition ${
                     selected
@@ -975,8 +981,7 @@ function ContactStep({
   onSubmit: (values: PublicBookingFormValues) => Promise<void>
 }) {
   const paymentMethod = form.watch('payment_method')
-  const submitLabel =
-    paymentMethod === 'online' ? 'Pagar online y reservar' : 'Reservar y pagar presencial'
+  const submitLabel = 'Reservar y pagar presencial'
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -1157,7 +1162,7 @@ function ContactStep({
           {submitting ? (
             <>
               <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-              {paymentMethod === 'online' ? 'Procesando pago' : 'Reservando'}
+              Reservando
             </>
           ) : (
             <>

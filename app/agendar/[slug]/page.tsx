@@ -37,18 +37,16 @@ type ServicioRow = {
 }
 
 type ProfesionalRow = {
+  centro_id: string
   profile_id: string
+  nombre: string
+  apellido: string | null
   especialidad: string | null
   bio: string | null
   avatar_url: string | null
   descanso_entre_reservas_minutos: number | null
   duracion_sesion_minutos: number | null
   intervalo_reservas_minutos: number | null
-  profiles: {
-    nombre: string
-    apellido: string | null
-    avatar_url: string | null
-  } | null
 }
 
 type BusyReservaRow = {
@@ -199,14 +197,12 @@ async function getPublicBookingData(
       .eq('public_visible', true)
       .order('nombre'),
     supabase
-      .from('miembros_centro')
+      .from('public_booking_professionals')
       .select(
-        'profile_id,especialidad,bio,avatar_url,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos,profiles!inner(nombre,apellido,avatar_url)'
+        'centro_id,profile_id,nombre,apellido,avatar_url,especialidad,bio,descanso_entre_reservas_minutos,duracion_sesion_minutos,intervalo_reservas_minutos'
       )
       .eq('centro_id', centro.id)
-      .eq('activo', true)
-      .eq('public_visible', true)
-      .in('rol', ['owner', 'admin', 'profesional']),
+      .order('nombre'),
     supabase
       .from('horarios_centro')
       .select('dia,activo,inicio,fin,descanso_activo,descanso_inicio,descanso_fin')
@@ -259,28 +255,19 @@ async function getPublicBookingData(
       modalidad: 'presencial',
     })),
     profesionales: ((profesionalesData ?? []) as unknown as ProfesionalRow[]).map(
-      (miembro) => {
-        const profile = miembro.profiles
-        const nombre = [
-          profile?.nombre ?? 'Profesional',
-          profile?.apellido ?? '',
-        ]
-          .filter(Boolean)
-          .join(' ')
-
-        return {
-          id: miembro.profile_id,
-          nombre,
-          especialidad: miembro.especialidad,
-          bio: miembro.bio,
-          avatarUrl: miembro.avatar_url ?? profile?.avatar_url ?? null,
-          descansoEntreReservasMinutos:
-            miembro.descanso_entre_reservas_minutos ?? 0,
-          duracionSesionMinutos: miembro.duracion_sesion_minutos ?? 60,
-          intervaloReservasMinutos:
-            miembro.intervalo_reservas_minutos ?? 60,
-        }
-      }
+      (miembro) => ({
+        id: miembro.profile_id,
+        nombre:
+          [miembro.nombre, miembro.apellido].filter(Boolean).join(' ') ||
+          'Profesional',
+        especialidad: miembro.especialidad,
+        bio: miembro.bio,
+        avatarUrl: miembro.avatar_url,
+        descansoEntreReservasMinutos:
+          miembro.descanso_entre_reservas_minutos ?? 0,
+        duracionSesionMinutos: miembro.duracion_sesion_minutos ?? 60,
+        intervaloReservasMinutos: miembro.intervalo_reservas_minutos ?? 60,
+      })
     ),
     horarios,
     busySlots: ((reservasData ?? []) as BusyReservaRow[]).map((reserva) => ({

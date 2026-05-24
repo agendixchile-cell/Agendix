@@ -929,7 +929,6 @@ async function sendPendingReservaConfirmationEmail(
       reservaId,
       centroId,
       error: delivery.result.error,
-      recipient: delivery.result.recipient,
     })
 
     return delivery.result.error

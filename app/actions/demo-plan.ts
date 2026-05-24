@@ -6,7 +6,13 @@ import { demoPlanCookieName } from '@/lib/demo-plan'
 import { normalizePlanId, type PlanId } from '@/lib/plans'
 
 export async function setDemoPlanAction(planId: PlanId) {
-  if (process.env.NODE_ENV === 'production') {
+  const demoEnabled =
+    process.env.AGENDIX_DEMO_ENABLED === 'true' ||
+    process.env.NEXT_PUBLIC_AGENDIX_DEMO_ENABLED === 'true' ||
+    (process.env.AGENDIX_DEMO_MODE === 'true' &&
+      process.env.NODE_ENV !== 'production')
+
+  if (!demoEnabled) {
     return {
       ok: false,
       message: 'El selector de plan demo no está disponible en producción.',

@@ -28,7 +28,7 @@ export function useDemoPlan(
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
-    if (!enabled || process.env.NODE_ENV === 'production') return
+    if (!enabled) return
 
     const storedPlanId = readDemoPlanFromStorage()
     const nextPlanId = storedPlanId ?? normalizePlanId(initialPlanId)
@@ -46,7 +46,7 @@ export function useDemoPlan(
   }, [enabled, initialPlanId, router])
 
   useEffect(() => {
-    if (!enabled || process.env.NODE_ENV === 'production') return
+    if (!enabled) return
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== demoPlanLocalStorageKey) return
@@ -70,7 +70,7 @@ export function useDemoPlan(
 
   const changePlan = useCallback(
     (nextPlanId: PlanId) => {
-      if (!enabled || process.env.NODE_ENV === 'production') return
+      if (!enabled) return
 
       const normalizedPlanId = normalizePlanId(nextPlanId)
       setPlanId(normalizedPlanId)

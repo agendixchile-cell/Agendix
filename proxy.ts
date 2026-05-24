@@ -5,15 +5,18 @@ import { getAppBaseUrl, getMarketingBaseUrl } from '@/lib/urls'
 
 const AUTH_PATHS = ['/login', '/register']
 const PROTECTED_PREFIXES = [
-  '/dashboard',
   '/agenda',
+  '/admin',
   '/centro',
-  '/salas',
-  '/profesionales',
-  '/servicios',
-  '/reservas',
-  '/pacientes',
+  '/configuracion',
+  '/dashboard',
+  '/estadisticas',
   '/fichas-clinicas',
+  '/pacientes',
+  '/profesionales',
+  '/reservas',
+  '/salas',
+  '/servicios',
 ]
 const APP_DOMAIN = 'app.agendixchile.cl'
 const MARKETING_DOMAIN = 'www.agendixchile.cl'

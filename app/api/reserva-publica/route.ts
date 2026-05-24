@@ -55,7 +55,7 @@ function buildPublicNotes({
     documento?.trim() ? `Documento informado: ${documento.trim()}` : null,
     motivo?.trim() ? `Motivo de consulta: ${motivo.trim()}` : null,
     paymentMethod === 'online'
-      ? 'Pago online: procesado en modo mock hasta integrar checkout real.'
+      ? 'Pago online: no disponible hasta integrar checkout real.'
       : 'Pago: presencial al momento de la atencion.',
   ]
     .filter(Boolean)
@@ -188,6 +188,16 @@ export async function POST(request: Request) {
     )
   }
 
+  if (values.payment_method === 'online') {
+    return NextResponse.json(
+      {
+        message:
+          'El pago online todavía no está disponible. Elige pago presencial para solicitar la reserva.',
+      },
+      { status: 400 }
+    )
+  }
+
   const { data: profesional, error: profesionalError } = await supabase
     .from('miembros_centro')
     .select('profile_id')
@@ -290,9 +300,7 @@ export async function POST(request: Request) {
     typeof servicio.precio === 'number' && servicio.precio > 0
       ? servicio.precio
       : null
-  const isOnlinePayment = values.payment_method === 'online'
-  const paymentStatus =
-    paymentAmount == null ? 'not_required' : isOnlinePayment ? 'paid' : 'pending'
+  const paymentStatus = paymentAmount == null ? 'not_required' : 'pending'
   const { data: reservaResult, error: reservaError } = await supabase
     .rpc('create_reserva_atomic', {
       p_centro_id: values.centro_id,
@@ -364,9 +372,9 @@ export async function POST(request: Request) {
     await supabase.from('pagos').insert({
       reserva_id: reserva.id,
       monto: paymentAmount,
-      estado: isOnlinePayment ? 'pagado' : 'pendiente',
-      metodo_pago: isOnlinePayment ? 'online_mock' : 'presencial',
-      referencia: isOnlinePayment ? `mock_${reserva.id}` : null,
+      estado: 'pendiente',
+      metodo_pago: 'presencial',
+      referencia: null,
     })
   }
 
@@ -400,7 +408,6 @@ export async function POST(request: Request) {
       reservaId: reserva.id,
       centroId: values.centro_id,
       error: professionalNotification.error,
-      recipient: professionalNotification.recipient,
     })
   }
 

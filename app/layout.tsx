@@ -5,11 +5,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL(getMarketingBaseUrl()),
   title: {
-    default: "Agendix | Agenda, reservas y pacientes para centros de salud",
+    default: "Agendix | Software de agenda, pacientes y reservas",
     template: "%s | Agendix",
   },
   description:
-    "Agenda para profesionales de la salud y centros médicos. Gestiona reservas, pacientes, profesionales, citas médicas y operación diaria en un solo software.",
+    "Software de agenda, pacientes y reservas para profesionales y centros de salud.",
   keywords: [
     "agenda para profesionales de la salud",
     "software de reservas",
@@ -20,19 +20,28 @@ export const metadata: Metadata = {
     "agenda clínica",
   ],
   openGraph: {
-    title: "Agendix | Agenda, reservas y pacientes para centros de salud",
+    title: "Agendix | Software de agenda, pacientes y reservas",
     description:
-      "Centraliza agenda clínica, reservas online, pacientes y equipo en un solo software para profesionales y centros de salud.",
+      "Software de agenda, pacientes y reservas para profesionales y centros de salud.",
     url: "https://www.agendixchile.cl",
     siteName: "Agendix",
     locale: "es_CL",
     type: "website",
+    images: [
+      {
+        url: "/agendix-wordmark.png",
+        width: 1200,
+        height: 630,
+        alt: "Agendix",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Agendix | Agenda, reservas y pacientes para centros de salud",
+    title: "Agendix | Software de agenda, pacientes y reservas",
     description:
-      "Software de agenda clínica, reservas online y gestión de pacientes para profesionales y centros de salud.",
+      "Software de agenda, pacientes y reservas para profesionales y centros de salud.",
+    images: ["/agendix-wordmark.png"],
   },
   icons: {
     icon: [{ url: "/icon.png", type: "image/png", sizes: "512x512" }],

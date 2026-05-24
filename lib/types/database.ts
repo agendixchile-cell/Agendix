@@ -1105,7 +1105,25 @@ export interface Database {
         ]
       }
     }
-    Views: Record<string, never>
+    Views: {
+      public_booking_professionals: {
+        Row: {
+          centro_id: string
+          profile_id: string
+          nombre: string
+          apellido: string | null
+          avatar_url: string | null
+          especialidad: string | null
+          bio: string | null
+          descanso_entre_reservas_minutos: number | null
+          duracion_sesion_minutos: number | null
+          intervalo_reservas_minutos: number | null
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+    }
     Functions: {
       claim_due_reservation_reminders: {
         Args: {

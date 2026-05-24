@@ -79,11 +79,7 @@ export default async function BookingConfirmationPage({
         date={searchValue(query.fecha) ?? ''}
         hour={searchValue(query.hora) ?? ''}
         price={formatPrice(Number(searchValue(query.precio) || 0))}
-        paymentStatus={
-          searchValue(query.payment_method) === 'online'
-            ? 'Pagado online'
-            : 'Pendiente presencial'
-        }
+        paymentStatus="Pendiente presencial"
         demoMode
       />
     )
@@ -167,9 +163,11 @@ export default async function BookingConfirmationPage({
 
 function paymentLabel(pago: PagoRow | null) {
   if (!pago) return 'No requerido'
-  if (pago.estado === 'pagado') return 'Pagado online'
+  if (pago.estado === 'pagado' && pago.metodo_pago !== 'online_mock') {
+    return 'Pagado online'
+  }
   if (pago.metodo_pago === 'presencial') return 'Pendiente presencial'
-  return 'Pendiente online'
+  return 'Pago online no disponible'
 }
 
 function ConfirmationView({
@@ -238,7 +236,7 @@ function ConfirmationView({
             </p>
             <p className="mt-1 leading-6">
               {paymentStatus === 'Pagado online'
-                ? 'Por ahora el pago online queda mockeado; el flujo está listo para conectar Stripe, Mercado Pago, Flow o Webpay.'
+                ? 'Pago confirmado por el proveedor conectado.'
                 : 'Tu hora quedó reservada y el pago se realiza directamente en el centro.'}
             </p>
           </div>

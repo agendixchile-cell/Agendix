@@ -119,8 +119,7 @@ where pc.centro_id = c.id
   and c.plan_id = 'individual';
 
 update public.centros c
-set owner_user_id = owner_member.profile_id
-from lateral (
+set owner_user_id = (
   select mc.profile_id
   from public.miembros_centro mc
   where mc.centro_id = c.id
@@ -132,8 +131,13 @@ from lateral (
     end,
     mc.created_at asc
   limit 1
-) owner_member
-where c.owner_user_id is null;
+)
+where c.owner_user_id is null
+  and exists (
+    select 1
+    from public.miembros_centro mc
+    where mc.centro_id = c.id
+  );
 
 create or replace function public.is_centro_admin(target_centro_id uuid)
 returns boolean
