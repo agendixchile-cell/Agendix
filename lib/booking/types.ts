@@ -69,4 +69,5 @@ export type PublicBookingResult = {
   ok: true
   reserva_id: string
   payment_status: PublicPaymentStatus
+  checkout_url?: string | null
 }

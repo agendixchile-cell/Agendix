@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { publicBookingRequestSchema } from '@/lib/booking/validation'
 import type { PublicBookingResult } from '@/lib/booking/types'
+import { getPaymentProvider } from '@/lib/payments/payment-service'
+import { PaymentProviderError } from '@/lib/payments/types'
 import { calculateReservationDateRange } from '@/lib/reservas/duration'
 import {
   buildReservationReminderRows,
@@ -13,6 +15,7 @@ import { sendProfessionalBookingEmail } from '@/lib/reminders/email'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit } from '@/lib/rate-limit'
 import type { EstadoReserva } from '@/lib/types/database'
+import { getAppUrl } from '@/lib/urls'
 
 export const runtime = 'nodejs'
 
@@ -47,7 +50,7 @@ function buildPublicNotes({
     documento?.trim() ? `Documento informado: ${documento.trim()}` : null,
     motivo?.trim() ? `Motivo de consulta: ${motivo.trim()}` : null,
     paymentMethod === 'online'
-      ? 'Pago online: no disponible en esta etapa.'
+      ? 'Pago: link online generado con Mercado Pago.'
       : 'Pago: presencial al momento de la atencion.',
   ]
     .filter(Boolean)
@@ -180,16 +183,6 @@ export async function POST(request: Request) {
     )
   }
 
-  if (values.payment_method === 'online') {
-    return NextResponse.json(
-      {
-        message:
-          'El pago online todavía no está disponible. Elige pago presencial para solicitar la reserva.',
-      },
-      { status: 400 }
-    )
-  }
-
   const { data: profesional, error: profesionalError } = await supabase
     .from('miembros_centro')
     .select('profile_id')
@@ -292,6 +285,17 @@ export async function POST(request: Request) {
     typeof servicio.precio === 'number' && servicio.precio > 0
       ? servicio.precio
       : null
+
+  if (values.payment_method === 'online' && paymentAmount == null) {
+    return NextResponse.json(
+      {
+        message:
+          'Este servicio no tiene precio publicado para pago online. Elige pago presencial.',
+      },
+      { status: 400 }
+    )
+  }
+
   const paymentStatus = paymentAmount == null ? 'not_required' : 'pending'
   const { data: reservaResult, error: reservaError } = await supabase
     .rpc('create_reserva_atomic', {
@@ -335,6 +339,7 @@ export async function POST(request: Request) {
 
   const reserva = { id: reservaResult.reserva_id }
   const reservaFechaFin = reservaResult.fecha_fin
+  let checkoutUrl: string | null = null
 
   const { data: reminderConfig } = await supabase
     .from('configuracion_recordatorios')
@@ -365,9 +370,119 @@ export async function POST(request: Request) {
       reserva_id: reserva.id,
       monto: paymentAmount,
       estado: 'pendiente',
-      metodo_pago: 'presencial',
+      metodo_pago:
+        values.payment_method === 'online' ? 'mercado_pago' : 'presencial',
       referencia: null,
+      provider: values.payment_method === 'online' ? 'mercado_pago' : null,
+      currency: 'CLP',
     })
+  }
+
+  if (values.payment_method === 'online') {
+    const { data: patientPayment, error: patientPaymentError } = await supabase
+      .from('patient_payments')
+      .insert({
+        organization_id: values.centro_id,
+        patient_id: paciente.id,
+        reservation_id: reserva.id,
+        service_id: values.servicio_id,
+        professional_id: values.profesional_id,
+        provider: 'mercado_pago',
+        amount: paymentAmount ?? 0,
+        currency: 'CLP',
+        description: servicio.nombre,
+        status: 'pending',
+        metadata: {
+          source: 'public_booking',
+        },
+      })
+      .select('id')
+      .single()
+
+    if (patientPaymentError || !patientPayment || paymentAmount == null) {
+      await supabase
+        .from('reservas')
+        .update({ estado: 'cancelled', payment_status: 'failed' })
+        .eq('id', reserva.id)
+
+      return NextResponse.json(
+        { message: 'No pudimos preparar el cobro online.' },
+        { status: 500 }
+      )
+    }
+
+    try {
+      const provider = getPaymentProvider('mercado_pago')
+      const paymentLink = await provider.createPaymentLink({
+        paymentId: patientPayment.id,
+        organizationId: values.centro_id,
+        organizationName: centro.nombre,
+        patientId: paciente.id,
+        patientEmail: paciente.email,
+        patientName: [paciente.nombre, paciente.apellido]
+          .filter(Boolean)
+          .join(' '),
+        reservationId: reserva.id,
+        serviceId: values.servicio_id,
+        amount: paymentAmount,
+        currency: 'CLP',
+        description: servicio.nombre,
+        successUrl: getAppUrl(
+          `/agendar/${centro.slug}/confirmacion?reserva=${reserva.id}`
+        ),
+        failureUrl: getAppUrl(
+          `/agendar/${centro.slug}/confirmacion?reserva=${reserva.id}&paymentStatus=rejected`
+        ),
+        pendingUrl: getAppUrl(
+          `/agendar/${centro.slug}/confirmacion?reserva=${reserva.id}&paymentStatus=pending`
+        ),
+        webhookUrl: getAppUrl('/api/webhooks/mercado-pago'),
+      })
+
+      checkoutUrl = paymentLink.checkoutUrl
+
+      await supabase
+        .from('patient_payments')
+        .update({
+          provider_preference_id: paymentLink.providerPreferenceId ?? null,
+          provider_external_reference: patientPayment.id,
+          checkout_url: paymentLink.checkoutUrl,
+        })
+        .eq('id', patientPayment.id)
+
+      await supabase
+        .from('reservas')
+        .update({
+          payment_provider: 'mercado_pago',
+          payment_reference: paymentLink.providerPreferenceId ?? patientPayment.id,
+        })
+        .eq('id', reserva.id)
+    } catch (error) {
+      await supabase
+        .from('patient_payments')
+        .update({
+          status: 'cancelled',
+          metadata: {
+            provider_error:
+              error instanceof Error ? error.message : 'Error desconocido',
+          },
+        })
+        .eq('id', patientPayment.id)
+      await supabase
+        .from('reservas')
+        .update({ estado: 'cancelled', payment_status: 'failed' })
+        .eq('id', reserva.id)
+
+      return NextResponse.json(
+        {
+          message:
+            error instanceof PaymentProviderError
+              ? error.message
+              : 'No pudimos generar el link de Mercado Pago.',
+        },
+        { status: 502 }
+      )
+    }
   }
 
   const professionalNotification = await sendProfessionalBookingEmail(
@@ -411,6 +526,7 @@ export async function POST(request: Request) {
     ok: true,
     reserva_id: reserva.id,
     payment_status: paymentStatus,
+    checkout_url: checkoutUrl,
   }
 
   return NextResponse.json(response)

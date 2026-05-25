@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import {
   CalendarClock,
+  CreditCard,
   Edit3,
   FileText,
   HeartHandshake,
@@ -763,6 +764,12 @@ function PacientesList({
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-2">
                     <Button asChild variant="ghost" size="sm">
+                      <Link href={`/pagos?patientId=${paciente.id}`}>
+                        <CreditCard size={14} aria-hidden="true" />
+                        Pagos
+                      </Link>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm">
                       <Link href={`/fichas-clinicas?paciente=${paciente.id}`}>
                         <FileText size={14} aria-hidden="true" />
                         Ficha
@@ -827,6 +834,12 @@ function PacientesList({
             )}
 
             <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <Button asChild variant="ghost" size="sm">
+                <Link href={`/pagos?patientId=${paciente.id}`}>
+                  <CreditCard size={14} aria-hidden="true" />
+                  Pagos
+                </Link>
+              </Button>
               <Button asChild variant="ghost" size="sm">
                 <Link href={`/fichas-clinicas?paciente=${paciente.id}`}>
                   <FileText size={14} aria-hidden="true" />

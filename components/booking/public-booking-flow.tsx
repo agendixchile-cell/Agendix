@@ -355,8 +355,7 @@ export function PublicBookingFlow({
           hora,
           precio: selectedService.precio?.toString() ?? '',
           payment_method: values.payment_method,
-          payment_status:
-            values.payment_method === 'online' ? 'disabled' : 'pending',
+          payment_status: 'pending',
         })
         router.push(`/agendar/${slug}/confirmacion?${params.toString()}`)
         return
@@ -387,6 +386,11 @@ export function PublicBookingFlow({
           errorMessage ??
             'No pudimos solicitar la hora. Revisa los datos e intenta nuevamente.'
         )
+        return
+      }
+
+      if (body.checkout_url) {
+        window.location.assign(body.checkout_url)
         return
       }
 
@@ -980,7 +984,11 @@ function ContactStep({
   onSubmit: (values: PublicBookingFormValues) => Promise<void>
 }) {
   const paymentMethod = form.watch('payment_method')
-  const submitLabel = 'Reservar y pagar presencial'
+  const canPayOnline = Boolean(selectedService?.precio && selectedService.precio > 0)
+  const submitLabel =
+    paymentMethod === 'online'
+      ? 'Reservar y pagar online'
+      : 'Reservar y pagar presencial'
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -1036,7 +1044,7 @@ function ContactStep({
         </div>
         <div className="mt-3 flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-200/70">
           <CreditCard size={14} className="text-[#F9735B]" aria-hidden="true" />
-          Por ahora puedes reservar pagando presencial. El pago online se evaluará en una etapa comercial posterior.
+          Puedes pagar presencial o abrir un link seguro de Mercado Pago para confirmar el cobro online.
         </div>
       </div>
 
@@ -1109,9 +1117,13 @@ function ContactStep({
             value="online"
             selected={paymentMethod === 'online'}
             title="Pago online"
-            description="No disponible en esta etapa. La reserva se confirma con pago presencial."
+            description={
+              canPayOnline
+                ? 'Genera un link seguro de Mercado Pago para completar el pago.'
+                : 'Disponible cuando el servicio tiene precio publicado.'
+            }
             price={selectedService?.precio ?? null}
-            disabled
+            disabled={!canPayOnline}
             register={form.register('payment_method')}
           />
         </div>

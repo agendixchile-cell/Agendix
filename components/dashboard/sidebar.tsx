@@ -40,6 +40,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
         icon: ClipboardList,
         match: ['/reservas'],
       },
+      { href: '/pagos', label: 'Pagos', icon: CreditCard },
       {
         href: '/admin',
         label: 'Coordinación',

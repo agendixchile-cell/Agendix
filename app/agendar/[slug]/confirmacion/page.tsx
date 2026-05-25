@@ -167,7 +167,8 @@ function paymentLabel(pago: PagoRow | null) {
     return 'Pagado online'
   }
   if (pago.metodo_pago === 'presencial') return 'Pendiente presencial'
-  return 'Pago online no disponible'
+  if (pago.metodo_pago === 'mercado_pago') return 'Pendiente Mercado Pago'
+  return 'Pago pendiente'
 }
 
 function ConfirmationView({

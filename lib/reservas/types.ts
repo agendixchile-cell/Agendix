@@ -49,6 +49,7 @@ export type ReservaListItem = Pick<
   | 'created_at'
   | 'updated_at'
 > & {
+  payment_status?: string | null
   servicio: ReservaServicioOption
   sala: ReservaSalaOption
   profesional: ReservaProfesionalOption
@@ -69,6 +70,7 @@ export type ReservaQueryRow = Pick<
   | 'created_at'
   | 'updated_at'
 > & {
+  payment_status?: string | null
   servicios:
     | Pick<
         Database['public']['Tables']['servicios']['Row'],

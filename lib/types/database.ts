@@ -1054,6 +1054,149 @@ export interface Database {
           },
         ]
       }
+      patient_payment_events: {
+        Row: {
+          id: string
+          patient_payment_id: string
+          provider: string
+          event_type: string
+          raw_payload: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          patient_payment_id: string
+          provider: string
+          event_type: string
+          raw_payload: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          patient_payment_id?: string
+          provider?: string
+          event_type?: string
+          raw_payload?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'patient_payment_events_patient_payment_id_fkey'
+            columns: ['patient_payment_id']
+            isOneToOne: false
+            referencedRelation: 'patient_payments'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      patient_payments: {
+        Row: {
+          id: string
+          organization_id: string
+          patient_id: string
+          reservation_id: string | null
+          service_id: string | null
+          professional_id: string | null
+          provider: string
+          provider_payment_id: string | null
+          provider_preference_id: string | null
+          provider_external_reference: string | null
+          amount: number
+          currency: string
+          description: string | null
+          status: string
+          checkout_url: string | null
+          paid_at: string | null
+          expires_at: string | null
+          metadata: Json | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          patient_id: string
+          reservation_id?: string | null
+          service_id?: string | null
+          professional_id?: string | null
+          provider?: string
+          provider_payment_id?: string | null
+          provider_preference_id?: string | null
+          provider_external_reference?: string | null
+          amount: number
+          currency?: string
+          description?: string | null
+          status?: string
+          checkout_url?: string | null
+          paid_at?: string | null
+          expires_at?: string | null
+          metadata?: Json | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          patient_id?: string
+          reservation_id?: string | null
+          service_id?: string | null
+          professional_id?: string | null
+          provider?: string
+          provider_payment_id?: string | null
+          provider_preference_id?: string | null
+          provider_external_reference?: string | null
+          amount?: number
+          currency?: string
+          description?: string | null
+          status?: string
+          checkout_url?: string | null
+          paid_at?: string | null
+          expires_at?: string | null
+          metadata?: Json | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'patient_payments_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'centros'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'patient_payments_patient_id_fkey'
+            columns: ['patient_id']
+            isOneToOne: false
+            referencedRelation: 'pacientes'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'patient_payments_reservation_id_fkey'
+            columns: ['reservation_id']
+            isOneToOne: false
+            referencedRelation: 'reservas'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'patient_payments_service_id_fkey'
+            columns: ['service_id']
+            isOneToOne: false
+            referencedRelation: 'servicios'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'patient_payments_professional_id_fkey'
+            columns: ['professional_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       horarios_centro: {
         Row: {
           id: string

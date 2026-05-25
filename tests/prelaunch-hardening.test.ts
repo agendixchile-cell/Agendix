@@ -69,16 +69,18 @@ describe('prelaunch hardening guardrails', () => {
     expect(rateLimitFixMigration).toContain('where rlb.reset_at')
   })
 
-  it('does not mark public mock payments as paid', () => {
+  it('creates online patient payments through Mercado Pago without marking them paid in the client', () => {
     const publicRoute = read('app/api/reserva-publica/route.ts')
     const bookingFlow = read('components/booking/public-booking-flow.tsx')
     const confirmationPage = read('app/agendar/[slug]/confirmacion/page.tsx')
 
-    expect(publicRoute).toContain('El pago online todavía no está disponible')
+    expect(publicRoute).toContain("getPaymentProvider('mercado_pago')")
+    expect(publicRoute).toContain("from('patient_payments')")
+    expect(publicRoute).toContain('checkout_url')
     expect(publicRoute).not.toContain("isOnlinePayment ? 'paid'")
     expect(publicRoute).not.toContain("isOnlinePayment ? 'pagado'")
     expect(publicRoute).not.toContain('online_mock')
-    expect(bookingFlow).toContain("disabled")
+    expect(bookingFlow).toContain('window.location.assign(body.checkout_url)')
     expect(bookingFlow).not.toContain('Procesando pago')
     expect(confirmationPage).not.toContain('mockeado')
   })

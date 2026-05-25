@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch } from 'react-hook-form'
 import {
@@ -15,6 +16,7 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  CreditCard,
   ExternalLink,
   Edit3,
   FileText,
@@ -300,6 +302,25 @@ function estadoTone(estado: EstadoReserva): 'orange' | 'green' | 'slate' | 'red'
   if (estado === 'completed') return 'slate'
   if (estado === 'cancelled' || estado === 'no_show') return 'red'
   return 'orange'
+}
+
+function paymentStatusLabel(status?: string | null) {
+  if (status === 'paid') return 'Pagado'
+  if (status === 'pending') return 'Cobro pendiente'
+  if (status === 'failed') return 'Rechazado'
+  if (status === 'refunded') return 'Devuelto'
+
+  return 'Sin cobro generado'
+}
+
+function paymentStatusTone(
+  status?: string | null
+): 'orange' | 'green' | 'slate' | 'red' {
+  if (status === 'paid') return 'green'
+  if (status === 'pending') return 'orange'
+  if (status === 'failed') return 'red'
+
+  return 'slate'
 }
 
 function normalizeReservaStatus(estado?: string | null): EstadoReserva {
@@ -4282,6 +4303,30 @@ function AppointmentDetailsPanel({
               <ExternalLink size={15} aria-hidden="true" className="shrink-0" />
             </a>
           )}
+
+          <div className="rounded-xl border border-slate-200/70 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Estado de pago
+                </p>
+                <p className="mt-1 text-sm leading-5 text-slate-500">
+                  Cobra esta reserva al paciente sin mezclarlo con tu plan de Agendix.
+                </p>
+              </div>
+              <Badge tone={paymentStatusTone(reserva.payment_status)}>
+                {paymentStatusLabel(reserva.payment_status)}
+              </Badge>
+            </div>
+            {reserva.payment_status !== 'paid' && (
+              <Button asChild variant="secondary" className="mt-3 w-full justify-start">
+                <Link href={`/pagos?reservationId=${reserva.id}`}>
+                  <CreditCard size={17} aria-hidden="true" />
+                  Generar link de pago
+                </Link>
+              </Button>
+            )}
+          </div>
 
           {reserva.notas && (
           <div className="rounded-xl border border-slate-200/70 p-4">
