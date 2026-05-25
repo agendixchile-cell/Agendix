@@ -25,7 +25,7 @@ export function AgendixWordmark({
       )}
     >
       <Image
-        src="/agendix-wordmark.png"
+        src="/agendix-wordmark-transparent.png"
         alt="Agendix"
         fill
         preload={preload}

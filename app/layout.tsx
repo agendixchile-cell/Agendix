@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/agendix-wordmark.png",
+        url: "/agendix-wordmark-transparent.png",
         width: 1200,
         height: 630,
         alt: "Agendix",
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     title: "Agendix | Software de agenda, pacientes y reservas",
     description:
       "Software de agenda, pacientes y reservas para profesionales y centros de salud.",
-    images: ["/agendix-wordmark.png"],
+    images: ["/agendix-wordmark-transparent.png"],
   },
   icons: {
     icon: [{ url: "/icon.png", type: "image/png", sizes: "512x512" }],
