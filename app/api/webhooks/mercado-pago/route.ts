@@ -16,6 +16,14 @@ type MercadoPagoWebhookPayload = {
   }
 }
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    provider: 'mercado_pago',
+    message: 'Webhook activo. Mercado Pago debe enviar notificaciones con POST.',
+  })
+}
+
 function paymentIdFromRequest(
   request: Request,
   payload: MercadoPagoWebhookPayload
