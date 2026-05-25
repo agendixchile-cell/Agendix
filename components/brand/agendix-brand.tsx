@@ -85,7 +85,7 @@ export function AgendixSymbol({
 
   return (
     <Image
-      src="/agendix-symbol.svg"
+      src="/apple-icon.png"
       alt=""
       width={56}
       height={56}
