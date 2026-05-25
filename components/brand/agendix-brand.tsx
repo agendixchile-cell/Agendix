@@ -84,46 +84,16 @@ export function AgendixSymbol({
   }
 
   return (
-    <span
+    <Image
+      src="/agendix-symbol.svg"
+      alt=""
+      width={56}
+      height={56}
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1.5 shadow-sm ring-1 ring-slate-200/80',
+        'shrink-0 object-contain',
         sizes[size],
         className
       )}
-    >
-      <AgendixLogoMark />
-    </span>
-  )
-}
-
-/** SVG inline del símbolo Agendix — A con figura de persona sentada */
-function AgendixLogoMark() {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      className="h-full w-full"
-    >
-      {/* Estructura A — dos trazos diagonales que convergen en el ápice */}
-      <polyline
-        points="10,88 50,9 90,88"
-        stroke="#F9735B"
-        strokeWidth="13"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* Cabeza — círculo central */}
-      <circle cx="50" cy="40" r="7" fill="#F9735B" />
-      {/* Cuerpo — V que representa persona sentada */}
-      <polyline
-        points="33,63 50,77 67,63"
-        stroke="#F9735B"
-        strokeWidth="12"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    />
   )
 }
