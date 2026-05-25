@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getAvailableSlots, localDateTime } from '@/lib/booking/availability'
+import {
+  getAvailableSlots,
+  getEffectiveSessionDuration,
+  localDateTime,
+} from '@/lib/booking/availability'
+import { calculateReservationEndTime } from '@/lib/reservas/duration'
 import type {
   PublicBookingProfessional,
   PublicBookingService,
@@ -80,14 +85,14 @@ describe('public booking availability', () => {
     expect(slots).not.toContain('09:15')
   })
 
-  it('lets professionals customize session duration and start frequency', () => {
+  it('uses professional interval only as start frequency', () => {
     const slots = getAvailableSlots({
       fecha: '2030-01-07',
-      servicio: service,
+      servicio: { ...service, duracionMinutos: 45 },
       profesional: {
         ...professional,
-        duracionSesionMinutos: 45,
-        intervaloReservasMinutos: 60,
+        duracionSesionMinutos: 90,
+        intervaloReservasMinutos: 30,
       },
       horarios,
       busySlots: [],
@@ -95,8 +100,27 @@ describe('public booking availability', () => {
       activeRoomCount: 2,
     })
 
-    expect(slots).toContain('14:00')
+    expect(slots.slice(0, 3)).toEqual(['09:00', '09:30', '10:00'])
     expect(slots).not.toContain('14:15')
+  })
+
+  it.each([30, 45, 60, 90])(
+    'calculates reservation end from a %i-minute service',
+    (durationMinutes) => {
+      const start = localDateTime('2030-01-07', '09:30')
+      const end = calculateReservationEndTime(start, durationMinutes)
+
+      expect((end.getTime() - start.getTime()) / 60_000).toBe(durationMinutes)
+    }
+  )
+
+  it('does not let professional block duration override service duration', () => {
+    expect(
+      getEffectiveSessionDuration({
+        servicio: { ...service, duracionMinutos: 45 },
+        profesional: { ...professional, duracionSesionMinutos: 90 },
+      })
+    ).toBe(45)
   })
 
   it('applies professional buffers around existing reservations', () => {
@@ -144,5 +168,31 @@ describe('public booking availability', () => {
 
     expect(slots).not.toContain('12:00')
     expect(slots).toContain('09:00')
+  })
+
+  it('rejects overlaps using the full service duration', () => {
+    const slots = getAvailableSlots({
+      fecha: '2030-01-07',
+      servicio: { ...service, duracionMinutos: 90 },
+      profesional: {
+        ...professional,
+        duracionSesionMinutos: 30,
+        intervaloReservasMinutos: 30,
+      },
+      horarios,
+      busySlots: [
+        {
+          profesionalId: professional.id,
+          fechaInicio: localIso('10:30'),
+          fechaFin: localIso('11:00'),
+        },
+      ],
+      scheduleBlocks: [],
+      activeRoomCount: 2,
+    })
+
+    expect(slots).not.toContain('09:30')
+    expect(slots).toContain('09:00')
+    expect(slots).toContain('11:00')
   })
 })

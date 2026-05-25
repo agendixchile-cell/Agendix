@@ -42,7 +42,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       },
       {
         href: '/admin',
-        label: 'Administración',
+        label: 'Coordinación',
         icon: Building2,
         feature: 'admin_panel',
         lockedLabel: 'Center',
@@ -70,6 +70,7 @@ type SidebarProps = {
   sessionLabel?: string
   demoMode?: boolean
   demoPlanId?: PlanId
+  currentPlanId?: PlanId
 }
 
 export function Sidebar({
@@ -80,9 +81,10 @@ export function Sidebar({
   sessionLabel = 'Sesión activa',
   demoMode = false,
   demoPlanId,
+  currentPlanId,
 }: SidebarProps) {
   const pathname = usePathname()
-  const planIdForNav = demoPlanId ?? 'individual'
+  const planIdForNav = currentPlanId ?? demoPlanId ?? 'individual'
   const activeHref =
     navGroups
       .flatMap((group) => group.items)
@@ -110,8 +112,7 @@ export function Sidebar({
             <div className="space-y-0.5">
               {group.items.map(({ href, label, icon: Icon, feature, lockedLabel }) => {
                 const active = href === activeHref
-                const locked =
-                  demoMode && feature ? !hasFeature(planIdForNav, feature) : false
+                const locked = feature ? !hasFeature(planIdForNav, feature) : false
                 const itemHref = locked ? '/configuracion/plan' : href
                 const resolvedLockedLabel = lockedLabel ?? 'plan superior'
 

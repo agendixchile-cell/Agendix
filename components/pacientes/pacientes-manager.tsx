@@ -211,7 +211,7 @@ export function PacientesManager({
       setFeedback({
         type: 'error',
         message:
-          'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.',
+          'Alcanzaste el máximo de 50 pacientes activos de Individual. Mejora a Center para trabajar con una base de pacientes compartida para todo el equipo.',
       })
     }
     setModal({ mode: 'create' })
@@ -308,7 +308,7 @@ export function PacientesManager({
           setFeedback({
             type: 'error',
             message:
-              'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.',
+              'Alcanzaste el máximo de 50 pacientes activos de Individual. Mejora a Center para trabajar con una base de pacientes compartida para todo el equipo.',
           })
           return
         }
@@ -347,7 +347,7 @@ export function PacientesManager({
         setFeedback({
           type: 'error',
           message:
-            'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.',
+            'Alcanzaste el máximo de 50 pacientes activos de Individual. Mejora a Center para trabajar con una base de pacientes compartida para todo el equipo.',
         })
         return
       }
@@ -455,8 +455,8 @@ export function PacientesManager({
         <UpgradeCard
           planId={planContext.planId}
           feature="advanced_patient_management"
-          title="Gestión avanzada de pacientes"
-          description="Filtros avanzados, historial operativo y segmentación de pacientes están disponibles desde Agendix Center Pro."
+          title="Historial operativo y seguimiento del paciente"
+          description="Activa segmentación, historial visible y seguimiento del paciente con Agendix Center Pro."
           compact
         />
       )}

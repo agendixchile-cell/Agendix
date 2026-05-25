@@ -8,7 +8,6 @@ import {
   DoorOpen,
   Globe2,
   HeartPulse,
-  ReceiptText,
   Settings,
   ShieldCheck,
   UserRoundCog,
@@ -180,10 +179,10 @@ async function getRealConfigData() {
       ? 'Roles activos'
       : 'Disponible desde Center',
     adminStatus: hasFeature(planSnapshot.planId, 'admin_panel')
-      ? 'Panel administrativo activo'
+      ? 'Panel de coordinación activo'
       : 'No aplica en Individual',
     telemedicineStatus: hasFeature(planSnapshot.planId, 'meeting_links')
-      ? 'Enlaces Meet/Zoom activos'
+      ? 'Links manuales Meet/Zoom activos'
       : 'Disponible desde Center Pro',
   }
 }
@@ -216,10 +215,10 @@ async function getDemoConfigData() {
         : 'Admin, profesional y recepcion'
       : 'Disponible desde Center',
     adminStatus: hasFeature(subscription.planId, 'admin_panel')
-      ? 'Panel administrativo activo'
+      ? 'Panel de coordinación activo'
       : 'No aplica en Individual',
     telemedicineStatus: hasFeature(subscription.planId, 'meeting_links')
-      ? 'Enlaces Meet/Zoom activos'
+      ? 'Links manuales Meet/Zoom activos'
       : 'Disponible desde Center Pro',
   }
 }
@@ -269,7 +268,7 @@ export default async function ConfiguracionPage() {
       tone: data.rolesStatus.includes('Disponible') ? 'slate' : 'green',
     },
     {
-      title: 'Panel administrativo',
+      title: 'Panel de coordinación',
       description: 'Vista de operación del centro, equipo, capacidad y actividad.',
       status: data.adminStatus,
       actionLabel: data.adminStatus.includes('No aplica') ? 'Ver plan' : 'Abrir panel',
@@ -278,8 +277,8 @@ export default async function ConfiguracionPage() {
       tone: data.adminStatus.includes('No aplica') ? 'slate' : 'orange',
     },
     {
-      title: 'Telemedicina',
-      description: 'Campos de enlace Meet o Zoom dentro de las reservas.',
+      title: 'Links de videollamada',
+      description: 'Links manuales de Meet/Zoom dentro de las reservas.',
       status: data.telemedicineStatus,
       actionLabel: data.telemedicineStatus.includes('Disponible')
         ? 'Ver plan'
@@ -327,29 +326,13 @@ export default async function ConfiguracionPage() {
       external: true,
     },
     {
-      title: 'Plan y facturación',
-      description: 'Plan actual, uso contra límites y preparación para suscripciones.',
+      title: 'Plan y uso',
+      description: 'Plan actual, uso contra límites y opciones comerciales.',
       status: data.planText,
       actionLabel: 'Ver mi plan',
       href: '/configuracion/plan',
       icon: CreditCard,
       tone: 'orange',
-    },
-    {
-      title: 'Pagos',
-      description: 'Base preparada para pago online y pago presencial.',
-      status: 'Checkout real pendiente',
-      actionLabel: 'Próximamente',
-      icon: CreditCard,
-      tone: 'slate',
-    },
-    {
-      title: 'Boletas',
-      description: 'Futura integración tributaria para emisión de documentos.',
-      status: 'Integración futura',
-      actionLabel: 'Próximamente',
-      icon: ReceiptText,
-      tone: 'slate',
     },
   ]
 
@@ -357,7 +340,7 @@ export default async function ConfiguracionPage() {
     <div className="space-y-5">
       <PageHeader
         title="Configuración"
-        description="Administra solo lo necesario para operar: centro, servicios, equipo, horarios, recordatorios, página pública y pagos."
+        description="Administra solo lo necesario para operar: centro, servicios, equipo, horarios, recordatorios, página pública y plan."
         eyebrow="Ajustes"
         icon={Settings}
         meta={

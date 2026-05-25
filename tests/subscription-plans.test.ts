@@ -7,8 +7,10 @@ import {
 import {
   canAddProfessional,
   canCreateActivePatient,
+  featureDefinitions,
   getPatientLimit,
   getProfessionalLimit,
+  getFeatureUpgradeText,
   hasFeature,
   planIds,
   subscriptionPlans,
@@ -59,6 +61,23 @@ describe('subscription plans', () => {
     expect(hasFeature('center', 'center_stats')).toBe(false)
     expect(hasFeature('center_pro', 'meeting_links')).toBe(true)
     expect(hasFeature('enterprise', 'automatic_meeting_links')).toBe(true)
+  })
+
+  it('exposes user-facing feature metadata for upgrade messaging', () => {
+    expect(featureDefinitions.center_stats).toMatchObject({
+      label: 'Métricas de asistencia, ocupación y carga del equipo',
+      minimumPlan: 'center_pro',
+      status: 'available',
+      enforcement: 'visual',
+    })
+    expect(featureDefinitions.automatic_meeting_links).toMatchObject({
+      minimumPlan: 'enterprise',
+      status: 'sales_only',
+      enforcement: 'preview',
+    })
+    expect(getFeatureUpgradeText('center', 'meeting_links')).toBe(
+      'Los links manuales de Meet/Zoom están disponibles desde Agendix Center Pro.'
+    )
   })
 })
 

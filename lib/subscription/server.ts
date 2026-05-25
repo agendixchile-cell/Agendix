@@ -324,14 +324,14 @@ export async function validateProfessionalCapacity(
     return {
       ok: false,
       message:
-        'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.',
+        'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para coordinar múltiples profesionales y compartir pacientes.',
     }
   }
 
   const fallbackUpgrade =
     snapshot.planId === 'center'
-      ? 'Mejora a Agendix Center Pro para sumar más profesionales.'
-      : 'Mejora a Agendix Enterprise para gestionar equipos grandes.'
+      ? 'Mejora a Agendix Center Pro para controlar la operación con más capacidad y métricas.'
+      : 'Enterprise es una solución a medida para equipos grandes con integraciones y acompañamiento.'
 
   return {
     ok: false,
@@ -361,6 +361,6 @@ export async function validateActivePatientCapacity(
   return {
     ok: false,
     message:
-      'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.',
+      'Alcanzaste el máximo de 50 pacientes activos de Individual. Mejora a Center para trabajar con una base de pacientes compartida para todo el equipo.',
   }
 }

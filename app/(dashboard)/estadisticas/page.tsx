@@ -31,27 +31,27 @@ const statCopy: Record<
   { title: string; description: string; scope: string }
 > = {
   individual: {
-    title: 'Estadisticas personales',
+    title: 'Resumen de mi consulta',
     description:
-      'Indicadores basicos de agenda y pacientes para una consulta individual.',
+      'Indicadores básicos de agenda y pacientes para ordenar una consulta individual.',
     scope: 'Vista individual',
   },
   center: {
-    title: 'Estadisticas operativas',
+    title: 'Lectura operativa del equipo',
     description:
-      'Lectura simple de reservas compartidas y flujo de pacientes del equipo.',
+      'Vista simple de reservas compartidas y flujo de pacientes del equipo.',
     scope: 'Centro pequeno',
   },
   center_pro: {
-    title: 'Estadisticas del centro',
+    title: 'Métricas de operación del centro',
     description:
-      'Asistencia, productividad, distribucion de reservas y telemedicina para operar con mas control.',
+      'Asistencia, ocupación, carga por profesional y reservas públicas para operar con más control.',
     scope: 'Center Pro',
   },
   enterprise: {
-    title: 'Estadisticas enterprise',
+    title: 'Métricas Enterprise a medida',
     description:
-      'Vision ejecutiva de alto volumen para equipos grandes y operacion clinica escalable.',
+      'Visión ejecutiva para equipos grandes, ajustable según alcance de implementación.',
     scope: 'Enterprise',
   },
 }
@@ -146,7 +146,7 @@ export default async function EstadisticasPage() {
           <Link href="/dashboard">Dashboard</Link>
         </Button>
         <Button asChild>
-          <Link href="/configuracion/plan">Cambiar plan</Link>
+          <Link href="/configuracion/plan">Ver opciones</Link>
         </Button>
       </PageHeader>
 
@@ -234,11 +234,11 @@ export default async function EstadisticasPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-slate-900">
-                  Analitica avanzada
+                  Métricas de operación
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-slate-500">
-                  Center Pro y Enterprise activan asistencia, productividad y
-                  telemedicina.
+                  Center Pro activa asistencia, ocupación, carga del equipo y
+                  links manuales de Meet/Zoom.
                 </p>
               </div>
               <Badge tone="green">Activo</Badge>
@@ -275,13 +275,13 @@ export default async function EstadisticasPage() {
             feature="center_stats"
             title={
               context.planId === 'individual'
-                ? 'Estadisticas basicas en Individual'
-                : 'Analitica avanzada disponible desde Center Pro'
+                ? 'Resumen básico en Individual'
+                : 'Métricas operativas disponibles desde Center Pro'
             }
             description={
               context.planId === 'individual'
-                ? 'Individual mantiene metricas simples de agenda, pacientes activos y cancelaciones.'
-                : 'Center muestra operacion simple del equipo. La asistencia, tendencias y productividad aparecen desde Center Pro.'
+                ? 'Individual mantiene una lectura simple de agenda, pacientes activos y cancelaciones.'
+                : 'Center coordina al equipo. Center Pro suma asistencia, ocupación y carga por profesional para tomar mejores decisiones.'
             }
           />
         )}

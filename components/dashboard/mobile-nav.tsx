@@ -13,6 +13,7 @@ type MobileNavProps = {
   sessionLabel: string
   demoMode?: boolean
   demoPlanId?: PlanId
+  currentPlanId?: PlanId
 }
 
 export function MobileNav({
@@ -21,6 +22,7 @@ export function MobileNav({
   sessionLabel,
   demoMode,
   demoPlanId,
+  currentPlanId,
 }: MobileNavProps) {
   const [open, setOpen] = useState(false)
   const portalTarget =
@@ -67,6 +69,7 @@ export function MobileNav({
                   sessionLabel={sessionLabel}
                   demoMode={demoMode}
                   demoPlanId={demoPlanId}
+                  currentPlanId={currentPlanId}
                 />
               </div>
             </div>

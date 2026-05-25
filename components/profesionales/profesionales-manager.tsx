@@ -328,7 +328,7 @@ export function ProfesionalesManager({
         type: 'error',
         message:
           planContext?.planId === 'individual'
-            ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+            ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para coordinar múltiples profesionales y compartir pacientes.'
             : `Alcanzaste el límite de ${professionalLimit} profesionales de tu plan.`,
       })
       return
@@ -454,7 +454,7 @@ export function ProfesionalesManager({
           type: 'error',
           message:
             planContext.planId === 'individual'
-              ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+              ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para coordinar múltiples profesionales y compartir pacientes.'
               : `Alcanzaste el límite de ${capacity.limit} profesionales de tu plan.`,
         })
         return
@@ -570,7 +570,7 @@ export function ProfesionalesManager({
             type: 'error',
             message:
               planContext.planId === 'individual'
-                ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+                ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para coordinar múltiples profesionales y compartir pacientes.'
                 : `Alcanzaste el límite de ${capacity.limit} profesionales de tu plan.`,
           })
           return
@@ -647,7 +647,7 @@ export function ProfesionalesManager({
           title="Límite de profesionales alcanzado"
           description={
             planContext?.planId === 'individual'
-              ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para gestionar un equipo.'
+              ? 'Tu plan Individual permite 1 profesional. Mejora a Agendix Center para coordinar múltiples profesionales y compartir pacientes.'
               : 'Tu plan actual llegó al máximo de profesionales activos. Mejora el plan o habilita profesionales extra cuando estén disponibles comercialmente.'
           }
         />

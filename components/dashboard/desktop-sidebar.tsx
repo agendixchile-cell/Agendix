@@ -15,6 +15,7 @@ type DesktopSidebarProps = {
   sessionLabel: string
   demoMode?: boolean
   demoPlanId?: PlanId
+  currentPlanId?: PlanId
 }
 
 export function DesktopSidebar({
@@ -23,6 +24,7 @@ export function DesktopSidebar({
   sessionLabel,
   demoMode,
   demoPlanId,
+  currentPlanId,
 }: DesktopSidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -90,6 +92,7 @@ export function DesktopSidebar({
           sessionLabel={sessionLabel}
           demoMode={demoMode}
           demoPlanId={demoPlanId}
+          currentPlanId={currentPlanId}
         />
       </div>
     </aside>

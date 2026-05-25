@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { publicBookingRequestSchema } from '@/lib/booking/validation'
-import { localDateTime } from '@/lib/booking/availability'
 import type { PublicBookingResult } from '@/lib/booking/types'
+import { calculateReservationDateRange } from '@/lib/reservas/duration'
 import {
   buildReservationReminderRows,
   DEFAULT_EMAIL_REMINDER_HOURS_BEFORE,
@@ -26,19 +26,11 @@ function splitNombreCompleto(nombreCompleto: string) {
 }
 
 function buildDateRange(fecha: string, hora: string, durationMinutes: number) {
-  const start = localDateTime(fecha, hora)
-
-  if (Number.isNaN(start.getTime())) {
-    return { error: 'Selecciona una fecha y hora válidas.' }
-  }
-
-  const end = new Date(start.getTime() + durationMinutes * 60_000)
-
-  return {
-    fechaInicio: start.toISOString(),
-    fechaFin: end.toISOString(),
-    startsAt: start,
-  }
+  return calculateReservationDateRange({
+    fecha,
+    hora,
+    serviceDurationMinutes: durationMinutes,
+  })
 }
 
 function buildPublicNotes({
@@ -55,7 +47,7 @@ function buildPublicNotes({
     documento?.trim() ? `Documento informado: ${documento.trim()}` : null,
     motivo?.trim() ? `Motivo de consulta: ${motivo.trim()}` : null,
     paymentMethod === 'online'
-      ? 'Pago online: no disponible hasta integrar checkout real.'
+      ? 'Pago online: no disponible en esta etapa.'
       : 'Pago: presencial al momento de la atencion.',
   ]
     .filter(Boolean)

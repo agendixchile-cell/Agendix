@@ -63,14 +63,14 @@ const dashboardCopy: Record<
     tone: 'pro',
     title: 'Dashboard Center Pro',
     description:
-      'Metrica agregada, asistencia, telemedicina y carga por profesional para una operacion en crecimiento.',
+      'Asistencia, ocupación, links manuales de Meet/Zoom y carga por profesional para controlar la operación.',
     eyebrow: 'Centro en crecimiento',
   },
   enterprise: {
     tone: 'enterprise',
     title: 'Dashboard Enterprise',
     description:
-      'Panel ejecutivo de mayor escala para equipos amplios, alto volumen de agenda y operacion multiservicio.',
+      'Panel ejecutivo para equipos grandes, con integraciones y acompañamiento definidos según alcance.',
     eyebrow: 'Operacion enterprise',
   },
 }
@@ -238,7 +238,7 @@ export default async function DashboardPage() {
           helper={
             context.planId === 'individual'
               ? 'Individual opera con limite de 50 pacientes activos.'
-              : 'Pacientes activos compartidos en el centro.'
+              : 'Base de pacientes compartida para todo el equipo.'
           }
           tone="green"
         />
@@ -269,8 +269,8 @@ export default async function DashboardPage() {
                   : context.planId === 'center'
                     ? 'Centro pequeno con agenda compartida.'
                     : context.planId === 'center_pro'
-                      ? 'Centro mediano con asistencia y telemedicina.'
-                      : 'Clinica demo con mayor volumen y menos restricciones.'
+                      ? 'Centro mediano con asistencia, ocupación y links manuales.'
+                      : 'Clínica demo con solución a medida e integraciones bajo alcance.'
               }
               enabled
             />
@@ -286,7 +286,7 @@ export default async function DashboardPage() {
             />
             <CapabilityRow
               icon={BarChart3}
-              title="Estadisticas del centro"
+              title="Métricas de asistencia, ocupación y carga"
               description={
                 hasFeature(context.planId, 'center_stats')
                   ? 'Metricas agregadas y productividad por profesional.'
@@ -299,8 +299,8 @@ export default async function DashboardPage() {
               title="Telemedicina"
               description={
                 hasFeature(context.planId, 'meeting_links')
-                  ? 'Reservas con enlaces Meet o Zoom visibles.'
-                  : 'Disponible desde Agendix Center Pro.'
+                  ? 'Reservas con links manuales de Meet/Zoom visibles.'
+                  : 'Links manuales de Meet/Zoom disponibles desde Agendix Center Pro.'
               }
               enabled={hasFeature(context.planId, 'meeting_links')}
             />
@@ -312,7 +312,7 @@ export default async function DashboardPage() {
             <div className="agendix-surface rounded-2xl p-5">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-slate-900">
-                  Estadisticas operativas
+                  Métricas operativas
                 </h2>
                 <Badge tone="green">Activo</Badge>
               </div>
@@ -346,8 +346,8 @@ export default async function DashboardPage() {
             <UpgradeCard
               planId={context.planId}
               feature="center_stats"
-              title="Estadisticas de centro bloqueadas"
-              description="Individual y Center muestran operacion simple. Las metricas agregadas aparecen desde Agendix Center Pro."
+              title="Métricas operativas bloqueadas"
+              description="Individual y Center muestran operación simple. Center Pro desbloquea asistencia, ocupación y carga por profesional."
               compact
             />
           )}

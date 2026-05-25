@@ -148,7 +148,7 @@ function supabaseError(message?: string): string {
   }
 
   if (error.includes('plan_professional_limit_exceeded')) {
-    return 'Alcanzaste el límite de profesionales de tu plan. Mejora tu plan para seguir creciendo.'
+    return 'Alcanzaste el límite de profesionales de tu plan. Mejora a Center para coordinar equipo o a Center Pro si necesitas más capacidad operativa.'
   }
 
   if (error.includes('foreign key')) {

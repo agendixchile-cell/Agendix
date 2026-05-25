@@ -1,7 +1,13 @@
 import Link from 'next/link'
 import { LockKeyhole, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { getFeatureUpgradeText, getMinimumPlanForFeature, type FeatureKey, type PlanId } from '@/lib/plans'
+import {
+  getFeatureDefinition,
+  getFeatureUpgradeText,
+  getMinimumPlanForFeature,
+  type FeatureKey,
+  type PlanId,
+} from '@/lib/plans'
 
 type UpgradeCardProps = {
   planId: PlanId
@@ -18,18 +24,29 @@ export function UpgradeCard({
   feature,
   title,
   description,
-  ctaLabel = 'Mejorar plan',
+  ctaLabel = 'Solicitar cambio',
   href = '/configuracion/plan',
   compact = false,
 }: UpgradeCardProps) {
   const minimumPlan = feature ? getMinimumPlanForFeature(feature) : null
+  const featureDefinition = feature ? getFeatureDefinition(feature) : null
+  const isSalesOnly = featureDefinition?.status === 'sales_only'
   const resolvedTitle =
-    title ?? (minimumPlan ? `Disponible desde ${minimumPlan.shortName}` : 'Función premium')
+    title ??
+    (featureDefinition
+      ? featureDefinition.label
+      : minimumPlan
+        ? `Disponible desde ${minimumPlan.shortName}`
+        : 'Función premium')
   const resolvedDescription =
     description ??
     (feature
       ? getFeatureUpgradeText(planId, feature)
-      : 'Mejora tu plan para desbloquear esta capacidad en tu organización.')
+      : 'Solicita un cambio de plan para desbloquear esta capacidad en tu organización.')
+  const resolvedCtaLabel = isSalesOnly ? 'Contactar ventas' : ctaLabel
+  const resolvedHref = isSalesOnly
+    ? 'mailto:contacto@agendixchile.cl?subject=Plan%20Enterprise%20Agendix'
+    : href
 
   return (
     <section className="rounded-2xl border border-orange-200/80 bg-orange-50/70 p-5 shadow-sm shadow-slate-900/[0.03]">
@@ -41,7 +58,11 @@ export function UpgradeCard({
           <h2 className="text-base font-semibold text-slate-900">{resolvedTitle}</h2>
           <p className="mt-1 text-sm leading-6 text-slate-600">{resolvedDescription}</p>
           <Button asChild size="sm" className="mt-4">
-            <Link href={href}>{ctaLabel}</Link>
+            {isSalesOnly ? (
+              <a href={resolvedHref}>{resolvedCtaLabel}</a>
+            ) : (
+              <Link href={resolvedHref}>{resolvedCtaLabel}</Link>
+            )}
           </Button>
         </div>
       </div>

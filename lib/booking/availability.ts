@@ -6,6 +6,7 @@ import type {
   PublicBusySlot,
   PublicScheduleBlock,
 } from '@/lib/booking/types'
+import { getServiceReservationDurationMinutes } from '@/lib/reservas/duration'
 import { zonedDateKey, zonedDateTime } from '@/lib/timezone'
 
 export const defaultBookingSlotStepMinutes = 60
@@ -108,17 +109,11 @@ function normalizePositiveMinutes(
   return Math.max(5, Math.trunc(value ?? fallback))
 }
 
-export function getEffectiveSessionDuration({
-  servicio,
-  profesional,
-}: {
+export function getEffectiveSessionDuration({ servicio }: {
   servicio: PublicBookingService
   profesional: PublicBookingProfessional
 }) {
-  return normalizePositiveMinutes(
-    profesional.duracionSesionMinutos,
-    servicio.duracionMinutos
-  )
+  return getServiceReservationDurationMinutes(servicio.duracionMinutos)
 }
 
 export function getProfessionalSlotStep(profesional: PublicBookingProfessional) {
@@ -207,10 +202,7 @@ export function getAvailableSlots({
     servicio,
     profesional,
   })
-  const slotStepMinutes = Math.max(
-    getProfessionalSlotStep(profesional),
-    sessionDurationMinutes
-  )
+  const slotStepMinutes = getProfessionalSlotStep(profesional)
   const slots: string[] = []
 
   for (

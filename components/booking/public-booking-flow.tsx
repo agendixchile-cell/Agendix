@@ -824,8 +824,7 @@ function ProfessionalStep({
                     </p>
                   )}
                   <p className="mt-1 text-xs font-medium text-slate-400">
-                    {professional.duracionSesionMinutos} min · cada{' '}
-                    {professional.intervaloReservasMinutos} min
+                    Horarios cada {professional.intervaloReservasMinutos} min
                   </p>
                   {professional.bio && (
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
@@ -1037,7 +1036,7 @@ function ContactStep({
         </div>
         <div className="mt-3 flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-200/70">
           <CreditCard size={14} className="text-[#F9735B]" aria-hidden="true" />
-          Por ahora puedes reservar pagando presencial. El pago online queda preparado para activarse cuando el centro conecte checkout.
+          Por ahora puedes reservar pagando presencial. El pago online se evaluará en una etapa comercial posterior.
         </div>
       </div>
 
@@ -1110,7 +1109,7 @@ function ContactStep({
             value="online"
             selected={paymentMethod === 'online'}
             title="Pago online"
-            description="Próximamente con checkout real. Por ahora no confirma pagos."
+            description="No disponible en esta etapa. La reserva se confirma con pago presencial."
             price={selectedService?.precio ?? null}
             disabled
             register={form.register('payment_method')}

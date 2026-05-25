@@ -110,7 +110,7 @@ begin
 
   select
     coalesce(mc.descanso_entre_reservas_minutos, 0),
-    coalesce(mc.duracion_sesion_minutos, v_servicio_duracion_minutos),
+    v_servicio_duracion_minutos,
     coalesce(mc.intervalo_reservas_minutos, 60)
     into v_break_minutos, v_duracion_minutos, v_intervalo_minutos
   from public.miembros_centro mc
@@ -430,7 +430,7 @@ begin
 
   select
     coalesce(mc.descanso_entre_reservas_minutos, 0),
-    coalesce(mc.duracion_sesion_minutos, v_servicio_duracion_minutos)
+    v_servicio_duracion_minutos
     into v_break_minutos, v_duracion_minutos
   from public.miembros_centro mc
   where mc.centro_id = p_centro_id

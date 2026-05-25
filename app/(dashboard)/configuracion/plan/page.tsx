@@ -4,7 +4,6 @@ import { CreditCard } from 'lucide-react'
 import { DemoPlanExperience } from '@/components/plans/demo-plan-experience'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { FeedbackBanner, type FeedbackMessage } from '@/components/ui/feedback-banner'
 import { PageHeader } from '@/components/ui/page-header'
 import { isDemoMode } from '@/lib/auth/demo'
 import { subscriptionStatusLabels } from '@/lib/plans'
@@ -13,75 +12,7 @@ import {
   getDemoSubscriptionContext,
 } from '@/lib/subscription/server'
 
-type PlanPageProps = {
-  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>
-}
-
-function getQueryValue(value: string | string[] | undefined): string | null {
-  if (Array.isArray(value)) return value[0] ?? null
-
-  return value ?? null
-}
-
-function getBillingFeedback(
-  billing: string | null,
-  billingError: string | null
-): FeedbackMessage | null {
-  if (billing === 'success') {
-    return {
-      type: 'success',
-      message:
-        'Checkout completado. El plan se actualizará automáticamente cuando Stripe confirme el webhook.',
-    }
-  }
-
-  if (billing === 'cancelled') {
-    return {
-      type: 'warning',
-      message: 'Checkout cancelado. Tu plan actual se mantiene sin cambios.',
-    }
-  }
-
-  if (billingError === 'migration') {
-    return {
-      type: 'warning',
-      message:
-        'Falta aplicar la migración de planes en Supabase antes de activar cobros reales.',
-    }
-  }
-
-  if (billingError === 'stripe_config') {
-    return {
-      type: 'warning',
-      message:
-        'Falta configurar STRIPE_SECRET_KEY para abrir checkout real.',
-    }
-  }
-
-  if (billingError === 'role') {
-    return {
-      type: 'error',
-      message: 'Solo el owner de la organización puede cambiar el plan.',
-    }
-  }
-
-  if (billingError) {
-    return {
-      type: 'error',
-      message:
-        'No pudimos iniciar el checkout. Revisa la configuración de facturación.',
-    }
-  }
-
-  return null
-}
-
-export default async function PlanPage({ searchParams }: PlanPageProps) {
-  const query = searchParams ? await searchParams : {}
-  const billingFeedback = getBillingFeedback(
-    getQueryValue(query.billing),
-    getQueryValue(query.billingError)
-  )
+export default async function PlanPage() {
   const demoMode = isDemoMode()
   const context = demoMode
     ? await getDemoSubscriptionContext()
@@ -100,7 +31,7 @@ export default async function PlanPage({ searchParams }: PlanPageProps) {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Plan y facturación"
+        title="Plan y uso"
         description="Revisa qué incluye tu plan, cuánto estás usando y qué capacidades puedes desbloquear al crecer."
         eyebrow="Mi plan"
         icon={CreditCard}
@@ -122,8 +53,6 @@ export default async function PlanPage({ searchParams }: PlanPageProps) {
           </a>
         </Button>
       </PageHeader>
-
-      {billingFeedback && <FeedbackBanner feedback={billingFeedback} />}
 
       <DemoPlanExperience context={context} demoMode={demoMode} />
     </div>

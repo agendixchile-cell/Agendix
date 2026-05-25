@@ -24,6 +24,7 @@ import {
   DEFAULT_WHATSAPP_REMINDER_HOURS_BEFORE,
   normalizeReminderHours,
 } from '@/lib/reminders/schedule'
+import { calculateReservationDateRange } from '@/lib/reservas/duration'
 import {
   defaultEmailBodyTemplate,
   defaultEmailSubjectTemplate,
@@ -41,7 +42,6 @@ import {
   validateActivePatientCapacity,
 } from '@/lib/subscription/server'
 import { revalidateCentroPublicPaths } from '@/lib/centro/public-revalidation'
-import { zonedDateTime } from '@/lib/timezone'
 import { getAppBaseUrl } from '@/lib/urls'
 
 const reservaSelect = `
@@ -113,7 +113,7 @@ function supabaseError(message?: string): string {
   }
 
   if (error.includes('plan_active_patient_limit_exceeded')) {
-    return 'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.'
+    return 'Alcanzaste el máximo de 50 pacientes activos de Individual. Mejora a Center para trabajar con una base de pacientes compartida para todo el equipo.'
   }
 
   if (error.includes('foreign key')) {
@@ -124,18 +124,11 @@ function supabaseError(message?: string): string {
 }
 
 function buildDateRange(values: ReservaFormValues, durationMinutes: number) {
-  const start = zonedDateTime(values.fecha, values.hora)
-
-  if (Number.isNaN(start.getTime())) {
-    return { error: 'Selecciona una fecha y hora válidas.' }
-  }
-
-  const end = new Date(start.getTime() + durationMinutes * 60_000)
-
-  return {
-    fechaInicio: start.toISOString(),
-    fechaFin: end.toISOString(),
-  }
+  return calculateReservationDateRange({
+    fecha: values.fecha,
+    hora: values.hora,
+    serviceDurationMinutes: durationMinutes,
+  })
 }
 
 function asistenciaForReservaStatus(estado: EstadoReserva): EstadoAsistencia {
@@ -143,6 +136,27 @@ function asistenciaForReservaStatus(estado: EstadoReserva): EstadoAsistencia {
   if (estado === 'no_show') return 'no_asistio'
 
   return 'sin_marcar'
+}
+
+function requiresAttendanceControl(estado: EstadoReserva) {
+  return estado === 'completed' || estado === 'no_show'
+}
+
+async function validateAttendanceControlForPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  centroId: string
+) {
+  const snapshot = await getPlanSnapshotForCentro(supabase, centroId)
+
+  if (hasFeature(snapshot.planId, 'attendance_control')) {
+    return { ok: true as const }
+  }
+
+  return {
+    ok: false as const,
+    message:
+      'El registro de asistió/no asistió por reserva está disponible desde Agendix Center Pro.',
+  }
 }
 
 async function upsertReminderSkeletons(
@@ -291,7 +305,7 @@ async function resolveReservaRelations(
 
   const { data: profesional, error: profesionalError } = await supabase
     .from('miembros_centro')
-    .select('profile_id,duracion_sesion_minutos')
+    .select('profile_id')
     .eq('profile_id', values.profesional_id)
     .eq('centro_id', centroId)
     .eq('activo', true)
@@ -306,10 +320,7 @@ async function resolveReservaRelations(
     return { error: 'Selecciona un profesional activo de tu centro.' }
   }
 
-  return {
-    durationMinutes:
-      profesional.duracion_sesion_minutos ?? servicio.duracion_minutos,
-  }
+  return { durationMinutes: servicio.duracion_minutos }
 }
 
 async function resolveMeetingPayloadForPlan(
@@ -326,7 +337,7 @@ async function resolveMeetingPayloadForPlan(
   if (!hasFeature(snapshot.planId, 'meeting_links')) {
     return {
       error:
-        'Los enlaces de Zoom o Google Meet están disponibles desde Agendix Center Pro.',
+        'Los links manuales de Meet/Zoom en reservas están disponibles desde Agendix Center Pro.',
     }
   }
 
@@ -1226,6 +1237,17 @@ export async function updateReservaEstadoAction(
     return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
   }
 
+  if (requiresAttendanceControl(estado)) {
+    const attendanceAccess = await validateAttendanceControlForPlan(
+      supabase,
+      centroId
+    )
+
+    if (!attendanceAccess.ok) {
+      return { ok: false, message: attendanceAccess.message }
+    }
+  }
+
   const { error: updateError } = await supabase
     .from('reservas')
     .update({
@@ -1282,6 +1304,17 @@ export async function updateReservaAsistenciaAction(
 
   if (error || !centroId) {
     return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
+  }
+
+  if (estadoAsistencia === 'asistio' || estadoAsistencia === 'no_asistio') {
+    const attendanceAccess = await validateAttendanceControlForPlan(
+      supabase,
+      centroId
+    )
+
+    if (!attendanceAccess.ok) {
+      return { ok: false, message: attendanceAccess.message }
+    }
   }
 
   const { error: updateError } = await supabase

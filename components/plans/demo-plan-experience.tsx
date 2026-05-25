@@ -6,7 +6,6 @@ import {
   LockKeyhole,
   Sparkles,
 } from 'lucide-react'
-import { createBillingCheckoutAction } from '@/app/actions/billing'
 import { useDemoPlan } from '@/hooks/use-demo-plan'
 import { UsageMeter } from '@/components/plans/usage-meter'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import {
   formatPlanPrice,
+  getFeatureDefinition,
   getNextPlan,
   getPatientLimit,
   getProfessionalLimit,
@@ -30,51 +30,15 @@ type DemoPlanExperienceProps = {
   demoMode: boolean
 }
 
-const demoFeatureRows: Array<{
-  feature: FeatureKey
-  title: string
-  description: string
-}> = [
-  {
-    feature: 'advanced_calendar',
-    title: 'Organización avanzada de agenda',
-    description: 'Base operativa para ordenar horas, disponibilidad y estados.',
-  },
-  {
-    feature: 'shared_calendar',
-    title: 'Agenda compartida',
-    description: 'Vista de equipo y coordinación entre profesionales.',
-  },
-  {
-    feature: 'admin_panel',
-    title: 'Panel administrativo',
-    description: 'Centro de mando para roles, servicios, salas y equipo.',
-  },
-  {
-    feature: 'center_stats',
-    title: 'Estadísticas del centro',
-    description: 'Métricas agregadas de actividad, asistencia y operación.',
-  },
-  {
-    feature: 'attendance_control',
-    title: 'Control de asistencia',
-    description: 'Seguimiento de asistencias, ausencias y reservas cerradas.',
-  },
-  {
-    feature: 'advanced_patient_management',
-    title: 'Gestión avanzada de pacientes',
-    description: 'Mayor profundidad operativa para pacientes compartidos.',
-  },
-  {
-    feature: 'meeting_links',
-    title: 'Enlaces Meet o Zoom',
-    description: 'Campo habilitado para telemedicina y reuniones de equipo.',
-  },
-  {
-    feature: 'automatic_meeting_links',
-    title: 'Automatización enterprise',
-    description: 'Preparación visual para enlaces automáticos e integraciones.',
-  },
+const demoFeatureRows: FeatureKey[] = [
+  'advanced_calendar',
+  'shared_calendar',
+  'admin_panel',
+  'center_stats',
+  'attendance_control',
+  'advanced_patient_management',
+  'meeting_links',
+  'automatic_meeting_links',
 ]
 
 export function DemoPlanExperience({
@@ -123,15 +87,22 @@ export function DemoPlanExperience({
               <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900">
                 {activePlan.commercialName}
               </h2>
+              <p className="mt-2 text-sm font-semibold text-orange-700">
+                {activePlan.positioning}
+              </p>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
                 {activePlan.description}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 md:text-right">
               <p className="text-3xl font-bold tracking-tight text-slate-900">
-                {formatPlanPrice(activePlan.monthlyPriceClp)}
+                {activePlan.ctaKind === 'sales'
+                  ? 'A medida'
+                  : formatPlanPrice(activePlan.monthlyPriceClp)}
               </p>
-              <p className="mt-1 text-sm font-medium text-slate-500">/ mes</p>
+              <p className="mt-1 text-sm font-medium text-slate-500">
+                {activePlan.ctaKind === 'sales' ? 'según alcance' : '/ mes'}
+              </p>
             </div>
           </div>
 
@@ -196,20 +167,10 @@ export function DemoPlanExperience({
             </p>
             <Button asChild className="mt-4 w-full">
               <a href="mailto:contacto@agendixchile.cl?subject=Mejorar%20plan%20Agendix">
-                Mejorar plan
+                Solicitar cambio
                 <ArrowUpRight size={16} aria-hidden="true" />
               </a>
             </Button>
-          </div>
-
-          <div className="agendix-surface rounded-2xl p-5">
-            <p className="text-sm font-semibold text-slate-900">
-              Checkout real preparado
-            </p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              Stripe Checkout queda conectado a webhooks para sincronizar plan,
-              estado y suscripción cuando estén las claves y la migración en Supabase.
-            </p>
           </div>
         </aside>
       </section>
@@ -229,38 +190,50 @@ export function DemoPlanExperience({
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {demoFeatureRows.map((item) => {
-            const included = hasFeature(activePlanId, item.feature)
+          {demoFeatureRows.map((feature) => {
+            const item = getFeatureDefinition(feature)
+            const included = hasFeature(activePlanId, feature)
+            const isSalesOnly = item.status === 'sales_only'
 
             return (
               <article
-                key={item.feature}
+                key={item.key}
                 className={`rounded-2xl border p-4 transition-colors ${
                   included
-                    ? 'border-emerald-200/80 bg-emerald-50/70'
+                    ? isSalesOnly
+                      ? 'border-sky-200/80 bg-sky-50/70'
+                      : 'border-emerald-200/80 bg-emerald-50/70'
                     : 'border-slate-200/80 bg-slate-50/70'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <span
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1 ${
-                      included
+                      included && !isSalesOnly
                         ? 'bg-white text-emerald-600 ring-emerald-200/70'
+                        : included && isSalesOnly
+                          ? 'bg-white text-sky-600 ring-sky-200/70'
                         : 'bg-white text-slate-400 ring-slate-200/80'
                     }`}
                   >
-                    {included ? (
+                    {included && !isSalesOnly ? (
                       <Check size={16} aria-hidden="true" />
                     ) : (
                       <LockKeyhole size={16} aria-hidden="true" />
                     )}
                   </span>
-                  <Badge tone={included ? 'green' : 'slate'}>
-                    {included ? 'Incluido' : 'Bloqueado'}
+                  <Badge tone={included ? (isSalesOnly ? 'blue' : 'green') : 'slate'}>
+                    {included
+                      ? isSalesOnly
+                        ? 'A medida'
+                        : item.status === 'preview'
+                          ? 'Preview'
+                          : 'Incluido'
+                      : 'Bloqueado'}
                   </Badge>
                 </div>
                 <h3 className="mt-4 text-sm font-semibold text-slate-900">
-                  {item.title}
+                  {item.label}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   {item.description}
@@ -275,12 +248,12 @@ export function DemoPlanExperience({
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-base font-semibold text-slate-900">
-              Telemedicina integrada y enlaces automáticos
+              Enterprise: automatización e integraciones a medida
             </h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">
               {hasFeature(activePlanId, 'automatic_meeting_links')
-                ? 'Tu plan incluye la arquitectura para enlaces automáticos, reuniones clínicas e integraciones avanzadas.'
-                : 'Disponible en Enterprise. La app ya guarda enlaces manuales en Center Pro y queda preparada para generación automática con Zoom o Google Meet.'}
+                ? 'Enterprise se evalúa con ventas: atención remota, links automáticos e integraciones dependen del alcance de implementación.'
+                : 'Center Pro guarda links manuales de Meet/Zoom. Las automatizaciones e integraciones se revisan como implementación Enterprise.'}
             </p>
           </div>
           <Badge
@@ -291,7 +264,7 @@ export function DemoPlanExperience({
             }
           >
             {hasFeature(activePlanId, 'automatic_meeting_links')
-              ? 'Incluido'
+              ? 'A medida'
               : 'Enterprise'}
           </Badge>
         </div>
@@ -342,7 +315,9 @@ function PlanSimulationSelector({
             {activePlan.commercialName}
           </p>
           <p className="mt-1 text-xs leading-5 text-slate-600">
-            {formatPlanPrice(activePlan.monthlyPriceClp)} / mes ·{' '}
+            {activePlan.ctaKind === 'sales'
+              ? 'A medida · '
+              : `${formatPlanPrice(activePlan.monthlyPriceClp)} / mes · `}
             {activePlan.audience}
           </p>
         </div>
@@ -380,7 +355,9 @@ function PlanSimulationSelector({
             >
               <span className="block text-sm font-semibold">{plan.shortName}</span>
               <span className="mt-0.5 block text-xs">
-                {formatPlanPrice(plan.monthlyPriceClp)}
+                {plan.ctaKind === 'sales'
+                  ? 'A medida'
+                  : formatPlanPrice(plan.monthlyPriceClp)}
               </span>
             </button>
           )
@@ -420,7 +397,9 @@ function PlanCard({
         {plan.professionalRangeLabel}
       </p>
       <p className="mt-4 text-xl font-bold text-slate-900">
-        {formatPlanPrice(plan.monthlyPriceClp)}
+        {plan.ctaKind === 'sales'
+          ? 'A medida'
+          : formatPlanPrice(plan.monthlyPriceClp)}
       </p>
       {plan.extras.professionals && (
         <p className="mt-2 text-xs font-medium text-slate-500">
@@ -441,17 +420,11 @@ function PlanCard({
               Simular este plan
             </Button>
           ) : plan.ctaKind === 'self_service' ? (
-            <form action={createBillingCheckoutAction}>
-              <input type="hidden" name="planId" value={plan.id} />
-              <Button
-                type="submit"
-                size="sm"
-                variant={plan.highlighted ? 'primary' : 'secondary'}
-                className="w-full"
-              >
-                Cambiar plan
-              </Button>
-            </form>
+            <Button asChild size="sm" variant={plan.highlighted ? 'primary' : 'secondary'} className="w-full">
+              <a href={`mailto:contacto@agendixchile.cl?subject=${encodeURIComponent(`Cambiar a ${plan.commercialName}`)}`}>
+                Solicitar cambio
+              </a>
+            </Button>
           ) : (
             <Button asChild size="sm" variant="secondary" className="w-full">
               <a href="mailto:contacto@agendixchile.cl?subject=Plan%20Enterprise%20Agendix">

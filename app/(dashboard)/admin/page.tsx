@@ -58,7 +58,7 @@ export default async function AdminPage() {
   if (!context) {
     return (
       <div className="agendix-surface rounded-2xl p-5">
-        No pudimos cargar el panel administrativo.
+        No pudimos cargar el panel de coordinación del centro.
       </div>
     )
   }
@@ -87,8 +87,8 @@ export default async function AdminPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Panel administrativo"
-        description="Vista ejecutiva del centro: plan, capacidad, equipo, pacientes y actividad reciente."
+        title="Panel de coordinación del centro"
+        description="Vista operativa del centro: plan, capacidad, equipo, pacientes y actividad reciente."
         eyebrow="Centro"
         icon={Building2}
         meta={
@@ -152,7 +152,7 @@ export default async function AdminPage() {
             label="Uso de pacientes activos"
             value={context.usage.activePatients}
             limit={patientLimit}
-            helper="Pacientes activos compartidos por la organización."
+            helper="Base de pacientes compartida para todo el equipo."
             tone="green"
           />
         </section>
@@ -165,10 +165,10 @@ export default async function AdminPage() {
               </span>
               <div>
                 <h2 className="text-base font-semibold text-slate-900">
-                  Estadísticas del centro
+                  Métricas de asistencia, ocupación y carga
                 </h2>
                 <p className="text-sm text-slate-500">
-                  Indicadores simples basados en reservas reales.
+                  Indicadores basados en reservas reales del centro.
                 </p>
               </div>
             </div>
@@ -183,8 +183,8 @@ export default async function AdminPage() {
           <UpgradeCard
             planId={context.planId}
             feature="center_stats"
-            title="Estadísticas del centro"
-            description="Las métricas administrativas avanzadas están disponibles desde Agendix Center Pro."
+            title="Métricas de asistencia, ocupación y carga"
+            description="Desbloquea métricas de asistencia, no-show y carga del equipo con Agendix Center Pro."
           />
         )}
 
@@ -192,7 +192,7 @@ export default async function AdminPage() {
           {[
             ['Equipo', 'Profesionales, roles y capacidad del centro.', '/profesionales'],
             ['Configuración', 'Centro, servicios, salas y horarios.', '/configuracion'],
-            ['Plan', 'Uso, límites y preparación de facturación.', '/configuracion/plan'],
+            ['Plan', 'Uso, límites y opciones comerciales.', '/configuracion/plan'],
           ].map(([title, description, href]) => (
             <article key={title} className="agendix-surface rounded-2xl p-5">
               <Settings size={18} aria-hidden="true" className="text-orange-500" />
@@ -210,7 +210,7 @@ export default async function AdminPage() {
           <UpgradeCard
             planId={context.planId}
             title="Permisos insuficientes"
-            description="Solo Owner y Admin pueden abrir el panel administrativo del centro."
+            description="Solo Owner y Admin pueden abrir el panel de coordinación del centro."
           />
         </FeatureGate>
       )}

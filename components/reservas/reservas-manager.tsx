@@ -81,6 +81,10 @@ import {
   type BloqueoAgendaFormValues,
   type ReservaFormValues,
 } from '@/lib/reservas/validation'
+import {
+  calculateReservationDateRange,
+  getServiceReservationDurationMinutes,
+} from '@/lib/reservas/duration'
 import type { EvolucionSesionListItem } from '@/lib/fichas/types'
 import {
   evolucionSesionSchema,
@@ -317,12 +321,15 @@ function asistenciaForReservaStatus(
 }
 
 function buildDateRange(values: ReservaFormValues, durationMinutes: number) {
-  const start = zonedDateTime(values.fecha, values.hora)
-  const end = new Date(start.getTime() + durationMinutes * 60_000)
+  const range = calculateReservationDateRange({
+    fecha: values.fecha,
+    hora: values.hora,
+    serviceDurationMinutes: durationMinutes,
+  })
 
   return {
-    fecha_inicio: start.toISOString(),
-    fecha_fin: end.toISOString(),
+    fecha_inicio: range.fechaInicio ?? '',
+    fecha_fin: range.fechaFin ?? '',
   }
 }
 
@@ -882,10 +889,6 @@ export function ReservasManager({
     control: form.control,
     name: 'servicio_id',
   })
-  const selectedProfessionalId = useWatch({
-    control: form.control,
-    name: 'profesional_id',
-  })
   const blockScope = useWatch({
     control: blockForm.control,
     name: 'scope',
@@ -900,13 +903,10 @@ export function ReservasManager({
   const selectedService = servicios.find(
     (servicio) => servicio.id === selectedServiceId
   )
-  const selectedProfessional = profesionales.find(
-    (profesional) => profesional.id === selectedProfessionalId
-  )
   const selectedDurationMinutes =
-    selectedProfessional?.duracion_sesion_minutos ??
-    selectedService?.duracion_minutos ??
-    0
+    selectedService
+      ? getServiceReservationDurationMinutes(selectedService.duracion_minutos)
+      : 0
   const creatingNewPaciente = !selectedPacienteId
 
   useEffect(() => {
@@ -1315,8 +1315,9 @@ export function ReservasManager({
     }
 
     const timestamp = nowIso()
-    const durationMinutes =
-      profesional.duracion_sesion_minutos ?? servicio.duracion_minutos
+    const durationMinutes = getServiceReservationDurationMinutes(
+      servicio.duracion_minutos
+    )
     const meetingPayload = toMeetingPayload(values.meeting_url)
 
     if (
@@ -1327,7 +1328,7 @@ export function ReservasManager({
       setFeedback({
         type: 'error',
         message:
-          'Los enlaces de Zoom o Google Meet están disponibles desde Agendix Center Pro.',
+          'Los links manuales de Meet/Zoom en reservas están disponibles desde Agendix Center Pro.',
       })
       return
     }
@@ -1873,7 +1874,7 @@ export function ReservasManager({
                 setFeedback({
                   type: 'error',
                   message:
-                    'El control de asistencia está disponible desde Agendix Center Pro.',
+                    'El registro de asistió/no asistió por reserva está disponible desde Agendix Center Pro.',
                 })
                 return
               }
@@ -1959,7 +1960,7 @@ export function ReservasManager({
               setFeedback({
                 type: 'error',
                 message:
-                  'El control de asistencia está disponible desde Agendix Center Pro.',
+                  'El registro de asistió/no asistió por reserva está disponible desde Agendix Center Pro.',
               })
               return
             }
@@ -1971,7 +1972,7 @@ export function ReservasManager({
               setFeedback({
                 type: 'error',
                 message:
-                  'El control de asistencia está disponible desde Agendix Center Pro.',
+                  'El registro de asistió/no asistió por reserva está disponible desde Agendix Center Pro.',
               })
               return
             }
@@ -2195,8 +2196,8 @@ export function ReservasManager({
                 />
                 {!canUseMeetingLinks && (
                   <p className="rounded-lg border border-orange-200/70 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
-                    Disponible desde Agendix Center Pro para guardar enlaces de
-                    telemedicina manuales.
+                    Disponible desde Agendix Center Pro para guardar links manuales
+                    de Meet/Zoom en reservas.
                   </p>
                 )}
               </div>
@@ -3541,12 +3542,18 @@ function AppointmentCard({
   compact?: boolean
 }) {
   const state = appointmentStateClasses(reserva)
+  const visualDurationHeight = compact
+    ? undefined
+    : Math.max(44, Math.round((reservationMinutes(reserva) / 60) * 56))
 
   return (
     <button
       type="button"
       onClick={() => onOpen(reserva)}
       className={`relative w-full overflow-hidden rounded-xl border p-2 pl-3 text-left transition-all duration-150 hover:-translate-y-px hover:shadow-sm hover:shadow-slate-900/10 ${state.card}`}
+      style={
+        visualDurationHeight ? { minHeight: visualDurationHeight } : undefined
+      }
     >
       <span className={`absolute inset-y-0 left-0 w-[3px] rounded-r-full ${state.accent}`} />
       <div className="flex items-start justify-between gap-2">
@@ -4288,7 +4295,7 @@ function AppointmentDetailsPanel({
           <div className="grid gap-2">
             {!canUseAttendanceControl && (
               <div className="rounded-xl border border-orange-200/70 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
-                Control de asistencia disponible desde Agendix Center Pro.
+                Registro de asistió/no asistió disponible desde Agendix Center Pro.
               </div>
             )}
             <Button

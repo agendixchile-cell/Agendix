@@ -2,6 +2,7 @@ import { demoPacientes } from '@/lib/pacientes/demo'
 import { demoProfesionales } from '@/lib/profesionales/demo'
 import { demoSalas } from '@/lib/salas/demo'
 import { demoServicios } from '@/lib/servicios/demo'
+import { getServiceReservationDurationMinutes } from '@/lib/reservas/duration'
 import type {
   ReservaListItem,
   ReservaPacienteOption,
@@ -80,8 +81,7 @@ export const demoReservas: ReservaListItem[] =
           fecha_inicio: todayMorning,
           fecha_fin: addMinutes(
             todayMorning,
-            firstProfesional.duracion_sesion_minutos ??
-              firstService.duracion_minutos
+            getServiceReservationDurationMinutes(firstService.duracion_minutos)
           ),
           estado: 'confirmed',
           estado_asistencia: 'sin_marcar',
@@ -101,8 +101,7 @@ export const demoReservas: ReservaListItem[] =
           fecha_inicio: todayAfternoon,
           fecha_fin: addMinutes(
             todayAfternoon,
-            secondProfesional.duracion_sesion_minutos ??
-              secondService.duracion_minutos
+            getServiceReservationDurationMinutes(secondService.duracion_minutos)
           ),
           estado: 'pending',
           estado_asistencia: 'sin_marcar',

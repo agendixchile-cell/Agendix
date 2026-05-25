@@ -5,6 +5,13 @@ import { DesktopSidebar } from '@/components/dashboard/desktop-sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
 import { getDemoPlanId } from '@/lib/subscription/server'
+import { normalizePlanId, type PlanId } from '@/lib/plans'
+
+type MembershipPlanRow = {
+  centros: {
+    plan_id: string | null
+  } | null
+}
 
 export default async function DashboardLayout({
   children,
@@ -19,6 +26,7 @@ export default async function DashboardLayout({
   if (!user && !isDemoMode()) redirect('/login')
   const demoMode = isDemoMode()
   const demoPlanId = demoMode ? await getDemoPlanId() : undefined
+  let currentPlanId: PlanId | undefined = demoPlanId
 
   const { data: profile } = user
     ? await supabase
@@ -27,6 +35,20 @@ export default async function DashboardLayout({
         .eq('id', user.id)
         .maybeSingle()
     : { data: null }
+
+  if (user && !demoMode) {
+    const { data: membership } = await supabase
+      .from('miembros_centro')
+      .select('centros!inner(plan_id)')
+      .eq('profile_id', user.id)
+      .eq('activo', true)
+      .limit(1)
+      .maybeSingle()
+
+    currentPlanId = normalizePlanId(
+      (membership as unknown as MembershipPlanRow | null)?.centros?.plan_id
+    )
+  }
 
   const nombreUsuario = profile?.nombre ?? user?.email ?? demoUser.nombre
   const inicialUsuario = nombreUsuario.charAt(0).toUpperCase()
@@ -40,6 +62,7 @@ export default async function DashboardLayout({
         sessionLabel={sessionLabel}
         demoMode={demoMode}
         demoPlanId={demoPlanId}
+        currentPlanId={currentPlanId}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -50,6 +73,7 @@ export default async function DashboardLayout({
             sessionLabel={sessionLabel}
             demoMode={demoMode}
             demoPlanId={demoPlanId}
+            currentPlanId={currentPlanId}
           />
           <div className="absolute left-1/2 -translate-x-1/2">
             <AgendixWordmark preload className="h-10 w-44 sm:h-11 sm:w-48" />

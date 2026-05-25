@@ -8,6 +8,7 @@ import type {
 import { demoSalas } from '@/lib/salas/demo'
 import { demoServicios } from '@/lib/servicios/demo'
 import { hasFeature, type PlanId } from '@/lib/plans'
+import { getServiceReservationDurationMinutes } from '@/lib/reservas/duration'
 import type {
   EvolucionSesionListItem,
   FichaClinicaListItem,
@@ -572,8 +573,9 @@ function makeReservas({
     const hour = hourBase + (index % hourSpread)
     const minutes = index % 2 === 0 ? 0 : 30
     const start = localIso(dayOffset, hour, minutes)
-    const duration =
-      profesional.duracion_sesion_minutos ?? servicio.duracion_minutos ?? 45
+    const duration = getServiceReservationDurationMinutes(
+      servicio.duracion_minutos
+    )
     const hasRemoteLink = canUseMeetingLinks && index % 5 === 2
     const provider = index % 2 === 0 ? 'google_meet' : 'zoom'
 

@@ -12,7 +12,7 @@ type PlanLimitBannerProps = {
 export function PlanLimitBanner({
   title,
   description,
-  ctaLabel = 'Mejorar plan',
+  ctaLabel = 'Ver opciones',
   href = '/configuracion/plan',
 }: PlanLimitBannerProps) {
   return (

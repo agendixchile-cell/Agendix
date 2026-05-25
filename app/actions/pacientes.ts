@@ -39,7 +39,7 @@ function supabaseError(message?: string): string {
   }
 
   if (error.includes('plan_active_patient_limit_exceeded')) {
-    return 'Alcanzaste el máximo de 50 pacientes activos de tu plan. Mejora tu plan para seguir creciendo.'
+    return 'Alcanzaste el máximo de 50 pacientes activos de Individual. Mejora a Center para trabajar con una base de pacientes compartida para todo el equipo.'
   }
 
   if (error.includes('foreign key')) {
