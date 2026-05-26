@@ -485,37 +485,39 @@ export async function POST(request: Request) {
     }
   }
 
-  const professionalNotification = await sendProfessionalBookingEmail(
-    {
-      reserva_id: reserva.id,
-      centro_id: values.centro_id,
-      centro_nombre: centro.nombre,
-      centro_email: centro.email,
-      centro_telefono: centro.telefono,
-      servicio_nombre: servicio.nombre,
-      fecha_inicio: fechaInicio,
-      fecha_fin: reservaFechaFin,
-      profesional_nombre:
-        [profesionalProfile?.nombre, profesionalProfile?.apellido]
-          .filter(Boolean)
-          .join(' ') || 'Profesional',
-      profesional_email: profesionalProfile?.email ?? null,
-      paciente_nombre: paciente.nombre,
-      paciente_apellido: paciente.apellido,
-      paciente_email: paciente.email,
-      paciente_telefono: paciente.telefono,
-      motivo: values.motivo?.trim() || null,
-      payment_status: paymentStatus,
-    },
-    { idempotencyKey: `agendix-professional-booking-${reserva.id}` }
-  )
+  if (values.payment_method !== 'online') {
+    const professionalNotification = await sendProfessionalBookingEmail(
+      {
+        reserva_id: reserva.id,
+        centro_id: values.centro_id,
+        centro_nombre: centro.nombre,
+        centro_email: centro.email,
+        centro_telefono: centro.telefono,
+        servicio_nombre: servicio.nombre,
+        fecha_inicio: fechaInicio,
+        fecha_fin: reservaFechaFin,
+        profesional_nombre:
+          [profesionalProfile?.nombre, profesionalProfile?.apellido]
+            .filter(Boolean)
+            .join(' ') || 'Profesional',
+        profesional_email: profesionalProfile?.email ?? null,
+        paciente_nombre: paciente.nombre,
+        paciente_apellido: paciente.apellido,
+        paciente_email: paciente.email,
+        paciente_telefono: paciente.telefono,
+        motivo: values.motivo?.trim() || null,
+        payment_status: paymentStatus,
+      },
+      { idempotencyKey: `agendix-professional-booking-${reserva.id}` }
+    )
 
-  if (!professionalNotification.ok) {
-    console.error('[reserva-publica] professional email failed', {
-      reservaId: reserva.id,
-      centroId: values.centro_id,
-      error: professionalNotification.error,
-    })
+    if (!professionalNotification.ok) {
+      console.error('[reserva-publica] professional email failed', {
+        reservaId: reserva.id,
+        centroId: values.centro_id,
+        error: professionalNotification.error,
+      })
+    }
   }
 
   revalidatePath('/agenda')

@@ -4,6 +4,7 @@ import {
   mapMercadoPagoStatus,
   verifyMercadoPagoWebhookSignature,
 } from '@/lib/payments/providers/mercado-pago'
+import { sendProfessionalBookingEmail } from '@/lib/reminders/email'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -14,6 +15,33 @@ type MercadoPagoWebhookPayload = {
   data?: {
     id?: string | number
   }
+}
+
+type ReservationNotificationRow = {
+  id: string
+  centro_id: string
+  fecha_inicio: string
+  fecha_fin: string
+  notas: string | null
+  centros: {
+    nombre: string
+    email: string | null
+    telefono: string | null
+  } | null
+  servicios: {
+    nombre: string
+  } | null
+  profiles: {
+    nombre: string
+    apellido: string | null
+    email: string | null
+  } | null
+  pacientes: {
+    nombre: string
+    apellido: string | null
+    email: string | null
+    telefono: string | null
+  } | null
 }
 
 export async function GET() {
@@ -53,6 +81,72 @@ function legacyPaymentStatus(status: ReturnType<typeof mapMercadoPagoStatus>) {
   if (status === 'refunded') return 'reembolsado'
 
   return 'pendiente'
+}
+
+function fullName(nombre?: string | null, apellido?: string | null) {
+  return [nombre, apellido].filter(Boolean).join(' ')
+}
+
+async function notifyProfessionalAfterPaidBooking(
+  supabase: NonNullable<ReturnType<typeof createAdminClient>>,
+  reservationId: string,
+  patientPaymentId: string
+) {
+  const { data: reservation } = await supabase
+    .from('reservas')
+    .select(
+      `
+        id,centro_id,fecha_inicio,fecha_fin,notas,
+        centros(nombre,email,telefono),
+        servicios(nombre),
+        profiles!reservas_profesional_id_fkey(nombre,apellido,email),
+        pacientes(nombre,apellido,email,telefono)
+      `
+    )
+    .eq('id', reservationId)
+    .maybeSingle()
+
+  const row = reservation as unknown as ReservationNotificationRow | null
+
+  if (!row || !row.centros || !row.servicios || !row.profiles || !row.pacientes) {
+    console.error('[mercado-pago-webhook] paid booking email data missing', {
+      reservationId,
+      patientPaymentId,
+    })
+    return
+  }
+
+  const professionalNotification = await sendProfessionalBookingEmail(
+    {
+      reserva_id: row.id,
+      centro_id: row.centro_id,
+      centro_nombre: row.centros.nombre,
+      centro_email: row.centros.email,
+      centro_telefono: row.centros.telefono,
+      servicio_nombre: row.servicios.nombre,
+      fecha_inicio: row.fecha_inicio,
+      fecha_fin: row.fecha_fin,
+      profesional_nombre: fullName(row.profiles.nombre, row.profiles.apellido) || 'Profesional',
+      profesional_email: row.profiles.email,
+      paciente_nombre: row.pacientes.nombre,
+      paciente_apellido: row.pacientes.apellido,
+      paciente_email: row.pacientes.email,
+      paciente_telefono: row.pacientes.telefono,
+      motivo: null,
+      payment_status: 'paid',
+    },
+    {
+      idempotencyKey: `agendix-professional-booking-paid-${reservationId}-${patientPaymentId}`,
+    }
+  )
+
+  if (!professionalNotification.ok) {
+    console.error('[mercado-pago-webhook] paid booking email failed', {
+      reservationId,
+      patientPaymentId,
+      error: professionalNotification.error,
+    })
+  }
 }
 
 export async function POST(request: Request) {
@@ -153,6 +247,14 @@ export async function POST(request: Request) {
         paid_at: paidAt,
       })
       .eq('reserva_id', patientPayment.reservation_id)
+
+    if (nextStatus === 'approved') {
+      await notifyProfessionalAfterPaidBooking(
+        supabase,
+        patientPayment.reservation_id,
+        patientPayment.id
+      )
+    }
   }
 
   return NextResponse.json({ ok: true })
