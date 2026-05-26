@@ -82,6 +82,7 @@ type CentroManagerProps = {
   initialHorarios: HorarioCentro[]
   initialRecordatorios: RecordatoriosConfig
   initialMercadoPagoSettings: MercadoPagoSettingsStatus
+  planId: PlanId
   rol: RolCentro
   demoMode: boolean
   demoPlanId?: PlanId
@@ -159,8 +160,11 @@ function roleLabel(rol: RolCentro) {
   return 'Profesional'
 }
 
-function mercadoPagoSourceLabel(settings: MercadoPagoSettingsStatus) {
-  if (settings.source === 'organization') return 'Cuenta del centro'
+function mercadoPagoSourceLabel(
+  settings: MercadoPagoSettingsStatus,
+  organizationLabel = 'centro'
+) {
+  if (settings.source === 'organization') return `Cuenta de ${organizationLabel}`
   if (settings.source === 'environment') return 'Cuenta global temporal'
 
   return 'Sin configurar'
@@ -170,11 +174,58 @@ function maskedTokenLabel(configured: boolean) {
   return configured ? 'Token guardado. Pega uno nuevo solo si quieres reemplazarlo.' : ''
 }
 
+function workspaceCopy(planId: PlanId) {
+  const isIndividual = planId === 'individual'
+
+  return {
+    title: isIndividual ? 'Consulta profesional' : 'Centro',
+    entity: isIndividual ? 'consulta' : 'centro',
+    paymentAccountOwner: isIndividual ? 'la consulta' : 'el centro',
+    entityCapitalized: isIndividual ? 'Consulta' : 'Centro',
+    nameLabel: isIndividual ? 'Nombre público profesional' : 'Nombre del centro',
+    namePlaceholder: isIndividual ? 'Dra. María González' : 'Centro Integral de Salud',
+    emailPlaceholder: isIndividual ? 'contacto@consulta.cl' : 'contacto@centro.cl',
+    headerDescription: isIndividual
+      ? 'Configura el nombre, contacto y horario de tu consulta. Esta información aparece en tu página pública de reservas.'
+      : 'Configura el nombre, contacto y horario de tu centro. Esta información aparece en la página pública de reservas.',
+    dataTitle: isIndividual ? 'Datos profesionales' : 'Datos del centro',
+    imageDescription: isIndividual
+      ? 'Aparece en tu plataforma interna y en tu portal público de reservas.'
+      : 'Aparece en la plataforma interna y en el portal público de reservas.',
+    completeDescription: isIndividual
+      ? 'Datos mínimos para operar y publicar tu consulta.'
+      : 'Datos mínimos para operar y publicar.',
+    activeLabel: isIndividual ? 'Consulta activa' : 'Centro activo',
+    inactiveLabel: isIndividual ? 'Consulta inactiva' : 'Centro inactivo',
+    saveLabel: isIndividual ? 'Guardar consulta' : 'Guardar centro',
+    summaryDescription: isIndividual
+      ? 'Señales rápidas para dejar tu consulta presentable.'
+      : 'Señales rápidas para dejar el centro presentable.',
+    summaryEntityLabel: isIndividual ? 'Consulta' : 'Centro',
+    mercadoPagoTitle: isIndividual
+      ? 'Mercado Pago de la consulta'
+      : 'Mercado Pago del centro',
+    mercadoPagoPlaceholder: isIndividual
+      ? 'Cuenta Mercado Pago de la consulta'
+      : 'Cuenta Mercado Pago del centro',
+    demoUpdatedMessage: isIndividual
+      ? 'Consulta actualizada en modo demo.'
+      : 'Centro actualizado en modo demo.',
+    noEditMessage: isIndividual
+      ? 'Solo administradores pueden actualizar la configuración de la consulta.'
+      : 'Solo administradores pueden actualizar la configuración del centro.',
+    imageErrorMessage: isIndividual
+      ? 'No pudimos guardar la imagen de la consulta.'
+      : 'No pudimos guardar la imagen del centro.',
+  }
+}
+
 export function CentroManager({
   initialCentro,
   initialHorarios,
   initialRecordatorios,
   initialMercadoPagoSettings,
+  planId,
   rol,
   demoMode,
   demoPlanId,
@@ -209,6 +260,7 @@ export function CentroManager({
   const activeDays = activeDaysLabel(horarios)
   const weeklyHours = weeklyHoursLabel(horarios)
   const publicUrl = `/${centro.slug}`
+  const copy = workspaceCopy(planId)
 
   const centroForm = useForm<CentroFormValues>({
     resolver: zodResolver(centroSchema),
@@ -416,7 +468,7 @@ export function CentroManager({
 
     setCentro(updatedCentro)
     writeDemoStorageItem(demoPlanId, 'centro', JSON.stringify(updatedCentro))
-    setFeedback({ type: 'success', message: 'Centro actualizado en modo demo.' })
+    setFeedback({ type: 'success', message: copy.demoUpdatedMessage })
   }
 
   const onCentroSubmit = centroForm.handleSubmit((values) => {
@@ -425,7 +477,7 @@ export function CentroManager({
     if (!canEditCentro) {
       setFeedback({
         type: 'error',
-        message: 'Solo administradores pueden actualizar la configuración del centro.',
+        message: copy.noEditMessage,
       })
       return
     }
@@ -471,7 +523,7 @@ export function CentroManager({
           message:
             error instanceof Error
               ? error.message
-              : 'No pudimos guardar la imagen del centro.',
+              : copy.imageErrorMessage,
         })
       } finally {
         setLogoUploadPending(false)
@@ -654,15 +706,15 @@ export function CentroManager({
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Centro"
-        description="Configura el nombre, contacto y horario de tu centro. Esta información aparece en la página pública de reservas."
+        title={copy.title}
+        description={copy.headerDescription}
         eyebrow="Configuración"
         icon={Settings}
         meta={
           <div className="flex flex-wrap gap-2">
             {demoMode && <Badge tone="slate">Modo demo</Badge>}
             <Badge tone={centro.activo ? 'green' : 'red'}>
-              {centro.activo ? 'Centro activo' : 'Centro inactivo'}
+              {centro.activo ? copy.activeLabel : copy.inactiveLabel}
             </Badge>
           </div>
         }
@@ -681,7 +733,7 @@ export function CentroManager({
             ? logoUploadPending
               ? 'Subiendo imagen...'
               : 'Guardando...'
-            : 'Guardar centro'}
+            : copy.saveLabel}
         </Button>
       </PageHeader>
 
@@ -694,7 +746,7 @@ export function CentroManager({
           {
             label: 'Ficha completa',
             value: `${score}%`,
-            description: 'Datos mínimos para operar y publicar.',
+            description: copy.completeDescription,
             icon: CheckCircle2,
             tone: score >= 80 ? 'green' : 'blue',
           },
@@ -730,7 +782,7 @@ export function CentroManager({
               </span>
               <div>
                 <h2 className="text-sm font-medium text-slate-800">
-                  Datos del centro
+                  {copy.dataTitle}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   Información visible para operación interna y futuras reservas públicas.
@@ -747,7 +799,7 @@ export function CentroManager({
           >
             <ImageUploadField
               label="Logo o imagen institucional"
-              description="Aparece en la plataforma interna y en el portal público de reservas."
+              description={copy.imageDescription}
               entityName={watchedCentroName || centro.nombre}
               imageUrl={centro.logo_url}
               previewUrl={logoPreviewUrl}
@@ -760,10 +812,10 @@ export function CentroManager({
               onRestore={resetLogoDraft}
             />
 
-            <Field label="Nombre del centro" error={centroForm.formState.errors.nombre?.message}>
+            <Field label={copy.nameLabel} error={centroForm.formState.errors.nombre?.message}>
               <input
                 type="text"
-                placeholder="Centro Integral de Salud"
+                placeholder={copy.namePlaceholder}
                 className="agendix-input"
                 disabled={!canEditCentro}
                 aria-invalid={centroForm.formState.errors.nombre ? 'true' : 'false'}
@@ -785,7 +837,7 @@ export function CentroManager({
               <Field label="Email" error={centroForm.formState.errors.email?.message}>
                 <input
                   type="email"
-                  placeholder="contacto@centro.cl"
+                  placeholder={copy.emailPlaceholder}
                   className="agendix-input"
                   disabled={!canEditCentro}
                   aria-invalid={centroForm.formState.errors.email ? 'true' : 'false'}
@@ -850,13 +902,13 @@ export function CentroManager({
             <div>
               <h2 className="text-sm font-medium text-slate-800">Resumen operativo</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Señales rápidas para dejar el centro presentable.
+                {copy.summaryDescription}
               </p>
             </div>
           </div>
 
           <div className="mt-4 space-y-3 text-sm">
-            <InfoRow icon={Building2} label="Centro" value={centro.nombre} />
+            <InfoRow icon={Building2} label={copy.summaryEntityLabel} value={centro.nombre} />
             <InfoRow icon={Mail} label="Contacto" value={centro.email ?? 'Sin email'} />
             <InfoRow icon={MapPin} label="Ubicación" value={centro.direccion ?? 'Sin dirección'} />
             <InfoRow icon={Globe2} label="Ruta pública" value={publicUrl} />
@@ -872,7 +924,7 @@ export function CentroManager({
             </span>
             <div>
               <h2 className="text-sm font-medium text-slate-800">
-                Mercado Pago del centro
+                {copy.mercadoPagoTitle}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
                 Los links de pago de pacientes se crean con la cuenta configurada aquí.
@@ -884,7 +936,7 @@ export function CentroManager({
               {mercadoPagoSettings.configured ? 'Activo' : 'Pendiente'}
             </Badge>
             <Badge tone={mercadoPagoSettings.source === 'environment' ? 'orange' : 'slate'}>
-              {mercadoPagoSourceLabel(mercadoPagoSettings)}
+              {mercadoPagoSourceLabel(mercadoPagoSettings, copy.paymentAccountOwner)}
             </Badge>
           </div>
         </div>
@@ -918,7 +970,7 @@ export function CentroManager({
               <input
                 type="text"
                 className="agendix-input"
-                placeholder="Cuenta Mercado Pago del centro"
+                placeholder={copy.mercadoPagoPlaceholder}
                 value={mercadoPagoAccountLabel}
                 disabled={!canEditCentro || isPending}
                 onChange={(event) => setMercadoPagoAccountLabel(event.target.value)}
@@ -942,7 +994,7 @@ export function CentroManager({
               <InfoRow
                 icon={CreditCard}
                 label="Cuenta usada"
-                value={mercadoPagoSourceLabel(mercadoPagoSettings)}
+                value={mercadoPagoSourceLabel(mercadoPagoSettings, copy.paymentAccountOwner)}
               />
               <InfoRow
                 icon={KeyRound}

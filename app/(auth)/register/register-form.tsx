@@ -94,7 +94,7 @@ export function RegisterForm({ selectedPlanId }: RegisterFormProps) {
           Crear cuenta
         </h2>
         <p className="mb-6 text-sm text-slate-500">
-          Deja listo tu centro y empieza a operar en minutos.
+          Deja listo tu perfil profesional o centro y empieza a operar en minutos.
         </p>
         <div className="mb-5 rounded-xl border border-orange-200/70 bg-orange-50 px-4 py-3">
           <p className="text-sm font-semibold text-orange-900">
@@ -122,13 +122,13 @@ export function RegisterForm({ selectedPlanId }: RegisterFormProps) {
               />
             </Field>
 
-            <Field label="Nombre del centro" error={errors.nombreCentro?.message}>
+            <Field label="Nombre profesional/centro" error={errors.nombreCentro?.message}>
               <input
                 id="nombreCentro"
                 type="text"
                 aria-invalid={errors.nombreCentro ? 'true' : 'false'}
                 className="agendix-input"
-                placeholder="Centro de Salud"
+                placeholder="Dra. María González o Centro de Salud"
                 {...register('nombreCentro')}
               />
             </Field>

@@ -42,8 +42,8 @@ export const registerSchema = z
     nombreCentro: z
       .string()
       .trim()
-      .min(2, 'Ingresa el nombre del centro')
-      .max(140, 'El nombre del centro es demasiado largo'),
+      .min(2, 'Ingresa el nombre profesional o centro')
+      .max(140, 'El nombre profesional o centro es demasiado largo'),
   })
   .refine((data) => data.password === data.confirmarPassword, {
     message: 'Las contraseñas no coinciden',

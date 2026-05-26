@@ -9,10 +9,11 @@ import { demoUser, isDemoMode } from '@/lib/auth/demo'
 import { getHorariosCentro, getRecordatoriosCentro } from '@/app/actions/centro'
 import { getMercadoPagoSettings } from '@/app/actions/centro'
 import { getDemoPlanId } from '@/lib/subscription/server'
+import { normalizePlanId, type PlanId } from '@/lib/plans'
 
 type MembershipQueryRow = {
   rol: CentroMembership['rol']
-  centros: CentroConfig | null
+  centros: (CentroConfig & { plan_id?: string | null }) | null
 }
 
 export default async function CentroPage() {
@@ -34,6 +35,7 @@ export default async function CentroPage() {
           account_label: null,
           updated_at: null,
         }}
+        planId={demoPlanId}
         rol="admin"
         demoMode
         demoPlanId={demoPlanId}
@@ -53,7 +55,7 @@ export default async function CentroPage() {
     .select(
       `
         rol,
-        centros!inner(id,nombre,slug,rut,direccion,telefono,email,logo_url,activo,created_at,updated_at)
+        centros!inner(id,nombre,slug,rut,direccion,telefono,email,logo_url,activo,created_at,updated_at,plan_id)
       `
     )
     .eq('profile_id', user.id)
@@ -77,9 +79,10 @@ export default async function CentroPage() {
           account_label: null,
           updated_at: null,
         }}
+        planId="individual"
         rol="profesional"
         demoMode={false}
-        loadError="No pudimos cargar la configuración del centro."
+        loadError="No pudimos cargar la configuración de tu espacio de atención."
       />
     )
   }
@@ -102,9 +105,10 @@ export default async function CentroPage() {
           account_label: null,
           updated_at: null,
         }}
+        planId="individual"
         rol="profesional"
         demoMode={false}
-        loadError={`No encontramos un centro asociado a ${user.email ?? demoUser.nombre}.`}
+        loadError={`No encontramos un espacio profesional o centro asociado a ${user.email ?? demoUser.nombre}.`}
       />
     )
   }
@@ -121,6 +125,7 @@ export default async function CentroPage() {
       initialHorarios={horarios}
       initialRecordatorios={recordatorios}
       initialMercadoPagoSettings={mercadoPagoSettings}
+      planId={normalizePlanId(membership.centros.plan_id) as PlanId}
       rol={membership.rol}
       demoMode={false}
     />
