@@ -10,6 +10,7 @@ import {
 import type { HorarioCentro } from '@/lib/centro/types'
 import type { PublicBookingData } from '@/lib/booking/types'
 import { getDemoPlanDataset } from '@/lib/demo-plan-data'
+import { getMercadoPagoStatusForOrganization } from '@/lib/payments/provider-settings'
 import { getDemoPlanId } from '@/lib/subscription/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -162,6 +163,7 @@ async function getPublicBookingData(
         dataset.reservaSalas.length ||
           dataset.salas.filter((sala) => sala.activa).length
       ),
+      onlinePaymentsEnabled: true,
       demoMode: true,
       demoPlanId: planId,
     }
@@ -229,6 +231,11 @@ async function getPublicBookingData(
   ])
 
   const centroRow = centro as CentroRow
+  const mercadoPagoStatus = await getMercadoPagoStatusForOrganization(
+    supabase,
+    centroRow.id,
+    { allowEnvironmentFallback: false }
+  )
   const horarios =
     horariosData && horariosData.length > 0
       ? normalizeHorarios(horariosData as HorarioCentro[])
@@ -281,6 +288,7 @@ async function getPublicBookingData(
       fechaFin: block.fecha_fin,
     })),
     activeRoomCount: Math.max(1, salasData?.length ?? 0),
+    onlinePaymentsEnabled: Boolean(mercadoPagoStatus.configured),
     demoMode: false,
   }
 }

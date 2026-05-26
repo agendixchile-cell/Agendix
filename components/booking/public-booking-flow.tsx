@@ -630,6 +630,7 @@ export function PublicBookingFlow({
                     selectedHour={hora}
                     selectedService={selectedService}
                     selectedProfessional={selectedProfessional}
+                    onlinePaymentsEnabled={data.onlinePaymentsEnabled}
                     submitError={submitError}
                     submitting={submitting}
                     onBack={goBack}
@@ -968,6 +969,7 @@ function ContactStep({
   selectedHour,
   selectedService,
   selectedProfessional,
+  onlinePaymentsEnabled,
   submitError,
   submitting,
   onBack,
@@ -978,13 +980,15 @@ function ContactStep({
   selectedHour: string
   selectedService: PublicBookingService | null
   selectedProfessional: PublicBookingProfessional | null
+  onlinePaymentsEnabled: boolean
   submitError: string
   submitting: boolean
   onBack: () => void
   onSubmit: (values: PublicBookingFormValues) => Promise<void>
 }) {
   const paymentMethod = form.watch('payment_method')
-  const canPayOnline = Boolean(selectedService?.precio && selectedService.precio > 0)
+  const serviceHasPrice = Boolean(selectedService?.precio && selectedService.precio > 0)
+  const canPayOnline = onlinePaymentsEnabled && serviceHasPrice
   const submitLabel =
     paymentMethod === 'online'
       ? 'Reservar y pagar online'
@@ -1120,11 +1124,15 @@ function ContactStep({
             description={
               canPayOnline
                 ? 'Genera un link seguro de Mercado Pago para completar el pago.'
-                : 'Agrega un precio al servicio para habilitar Mercado Pago.'
+                : serviceHasPrice
+                  ? 'El centro debe activar Mercado Pago para recibir pagos online.'
+                  : 'Agrega un precio al servicio para habilitar Mercado Pago.'
             }
             price={selectedService?.precio ?? null}
             disabled={!canPayOnline}
-            disabledLabel="Servicio sin precio publicado"
+            disabledLabel={
+              serviceHasPrice ? 'Mercado Pago pendiente' : 'Servicio sin precio publicado'
+            }
             register={form.register('payment_method')}
           />
         </div>

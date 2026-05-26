@@ -61,6 +61,7 @@ export type PublicBookingData = {
   busySlots: PublicBusySlot[]
   scheduleBlocks: PublicScheduleBlock[]
   activeRoomCount: number
+  onlinePaymentsEnabled: boolean
   demoMode: boolean
   demoPlanId?: string
 }

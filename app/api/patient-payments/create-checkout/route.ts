@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getPaymentProvider, normalizePaymentProvider } from '@/lib/payments/payment-service'
+import { getMercadoPagoCredentialsForOrganization } from '@/lib/payments/provider-settings'
 import { PaymentProviderError } from '@/lib/payments/types'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUrl } from '@/lib/urls'
 
@@ -134,6 +136,25 @@ export async function POST(request: Request) {
     return jsonError('Mercado Pago es el proveedor activo para links de pago.', 400)
   }
 
+  const adminSupabase = createAdminClient()
+
+  if (!adminSupabase) {
+    return jsonError('No pudimos acceder a la configuración de pagos.', 500)
+  }
+
+  const providerCredentials = await getMercadoPagoCredentialsForOrganization(
+    adminSupabase,
+    organizationId,
+    { allowEnvironmentFallback: false }
+  )
+
+  if (!providerCredentials.configured) {
+    return jsonError(
+      'Configura Mercado Pago del centro antes de generar links de pago.',
+      400
+    )
+  }
+
   const patientName = [patient.nombre, patient.apellido].filter(Boolean).join(' ')
 
   const { data: payment, error: paymentError } = await supabase
@@ -172,6 +193,7 @@ export async function POST(request: Request) {
       paymentId: payment.id,
       organizationId,
       organizationName: activeMembership.centros.nombre,
+      providerAccessToken: providerCredentials.accessToken,
       patientId: values.patientId,
       patientEmail: patient.email,
       patientName,

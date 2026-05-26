@@ -12,7 +12,9 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
+  CreditCard,
   Globe2,
+  KeyRound,
   Mail,
   MapPin,
   MessageCircle,
@@ -23,6 +25,7 @@ import {
 import {
   updateCentroAction,
   updateHorariosAction,
+  updateMercadoPagoSettingsAction,
   updateRecordatoriosAction,
 } from '@/app/actions/centro'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +47,7 @@ import {
 import type {
   CentroConfig,
   HorarioCentro,
+  MercadoPagoSettingsStatus,
   RecordatoriosConfig,
 } from '@/lib/centro/types'
 import type { RolCentro } from '@/lib/types/database'
@@ -77,6 +81,7 @@ type CentroManagerProps = {
   initialCentro: CentroConfig
   initialHorarios: HorarioCentro[]
   initialRecordatorios: RecordatoriosConfig
+  initialMercadoPagoSettings: MercadoPagoSettingsStatus
   rol: RolCentro
   demoMode: boolean
   demoPlanId?: PlanId
@@ -154,10 +159,22 @@ function roleLabel(rol: RolCentro) {
   return 'Profesional'
 }
 
+function mercadoPagoSourceLabel(settings: MercadoPagoSettingsStatus) {
+  if (settings.source === 'organization') return 'Cuenta del centro'
+  if (settings.source === 'environment') return 'Cuenta global temporal'
+
+  return 'Sin configurar'
+}
+
+function maskedTokenLabel(configured: boolean) {
+  return configured ? 'Token guardado. Pega uno nuevo solo si quieres reemplazarlo.' : ''
+}
+
 export function CentroManager({
   initialCentro,
   initialHorarios,
   initialRecordatorios,
+  initialMercadoPagoSettings,
   rol,
   demoMode,
   demoPlanId,
@@ -167,6 +184,16 @@ export function CentroManager({
   const [centro, setCentro] = useState(initialCentro)
   const [horarios, setHorarios] = useState(normalizeHorarios(initialHorarios))
   const [recordatorios, setRecordatorios] = useState(initialRecordatorios)
+  const [mercadoPagoSettings, setMercadoPagoSettings] = useState(
+    initialMercadoPagoSettings
+  )
+  const [mercadoPagoPublicKey, setMercadoPagoPublicKey] = useState(
+    initialMercadoPagoSettings.public_key ?? ''
+  )
+  const [mercadoPagoAccessToken, setMercadoPagoAccessToken] = useState('')
+  const [mercadoPagoAccountLabel, setMercadoPagoAccountLabel] = useState(
+    initialMercadoPagoSettings.account_label ?? ''
+  )
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(
     loadError ? { type: 'error', message: loadError } : null
   )
@@ -220,12 +247,19 @@ export function CentroManager({
     centroForm.reset(centroFormValues(initialCentro))
     horariosForm.reset({ horarios: normalizeHorarios(initialHorarios) })
     recordatoriosForm.reset(recordatoriosFormValues(initialRecordatorios))
+    window.setTimeout(() => {
+      setMercadoPagoSettings(initialMercadoPagoSettings)
+      setMercadoPagoPublicKey(initialMercadoPagoSettings.public_key ?? '')
+      setMercadoPagoAccessToken('')
+      setMercadoPagoAccountLabel(initialMercadoPagoSettings.account_label ?? '')
+    }, 0)
   }, [
     centroForm,
     demoMode,
     horariosForm,
     initialCentro,
     initialHorarios,
+    initialMercadoPagoSettings,
     initialRecordatorios,
     recordatoriosForm,
   ])
@@ -238,6 +272,7 @@ export function CentroManager({
     let storedCentro: CentroConfig | null = null
     let storedHorarios: HorarioCentro[] | null = null
     let storedRecordatorios: RecordatoriosConfig | null = null
+    let storedMercadoPagoSettings: MercadoPagoSettingsStatus | null = null
 
     try {
       const storedCentroValue = readDemoStorageItem(demoPlanId, 'centro')
@@ -258,15 +293,28 @@ export function CentroManager({
       if (storedRecordatoriosValue) {
         storedRecordatorios = JSON.parse(storedRecordatoriosValue) as RecordatoriosConfig
       }
+
+      const storedMercadoPagoValue = readDemoStorageItem(
+        demoPlanId,
+        'mercado-pago-settings'
+      )
+      if (storedMercadoPagoValue) {
+        storedMercadoPagoSettings = JSON.parse(
+          storedMercadoPagoValue
+        ) as MercadoPagoSettingsStatus
+      }
     } catch {
       removeDemoStorageItem(demoPlanId, 'centro')
       removeDemoStorageItem(demoPlanId, 'horarios-centro')
       removeDemoStorageItem(demoPlanId, 'recordatorios')
+      removeDemoStorageItem(demoPlanId, 'mercado-pago-settings')
     }
 
     const nextCentro = storedCentro ?? initialCentro
     const nextHorarios = storedHorarios ?? normalizeHorarios(initialHorarios)
     const nextRecordatorios = storedRecordatorios ?? initialRecordatorios
+    const nextMercadoPagoSettings =
+      storedMercadoPagoSettings ?? initialMercadoPagoSettings
 
     window.setTimeout(() => {
       setCentro(nextCentro)
@@ -275,6 +323,10 @@ export function CentroManager({
       horariosForm.reset({ horarios: nextHorarios })
       setRecordatorios(nextRecordatorios)
       recordatoriosForm.reset(recordatoriosFormValues(nextRecordatorios))
+      setMercadoPagoSettings(nextMercadoPagoSettings)
+      setMercadoPagoPublicKey(nextMercadoPagoSettings.public_key ?? '')
+      setMercadoPagoAccessToken('')
+      setMercadoPagoAccountLabel(nextMercadoPagoSettings.account_label ?? '')
     }, 0)
   }, [
     centroForm,
@@ -283,6 +335,7 @@ export function CentroManager({
     horariosForm,
     initialCentro,
     initialHorarios,
+    initialMercadoPagoSettings,
     initialRecordatorios,
     recordatoriosForm,
   ])
@@ -507,6 +560,66 @@ export function CentroManager({
       router.refresh()
     })
   })
+
+  const onMercadoPagoSubmit = () => {
+    setFeedback(null)
+
+    if (!canEditCentro) {
+      setFeedback({
+        type: 'error',
+        message: 'Solo administradores pueden configurar Mercado Pago.',
+      })
+      return
+    }
+
+    if (!mercadoPagoPublicKey.trim() || !mercadoPagoAccessToken.trim()) {
+      setFeedback({
+        type: 'error',
+        message: 'Ingresa la public key y el access token de Mercado Pago.',
+      })
+      return
+    }
+
+    if (demoMode) {
+      const nextSettings: MercadoPagoSettingsStatus = {
+        configured: true,
+        source: 'organization',
+        public_key: mercadoPagoPublicKey.trim(),
+        account_label: mercadoPagoAccountLabel.trim() || null,
+        updated_at: nowIso(),
+      }
+
+      setMercadoPagoSettings(nextSettings)
+      setMercadoPagoAccessToken('')
+      writeDemoStorageItem(
+        demoPlanId,
+        'mercado-pago-settings',
+        JSON.stringify(nextSettings)
+      )
+      setFeedback({ type: 'success', message: 'Mercado Pago actualizado en modo demo.' })
+      return
+    }
+
+    startTransition(async () => {
+      const result = await updateMercadoPagoSettingsAction({
+        public_key: mercadoPagoPublicKey,
+        access_token: mercadoPagoAccessToken,
+        account_label: mercadoPagoAccountLabel,
+      })
+
+      if (!result.ok) {
+        setFeedback({ type: 'error', message: result.message })
+        return
+      }
+
+      setMercadoPagoSettings(result.settings)
+      setMercadoPagoPublicKey(result.settings.public_key ?? '')
+      setMercadoPagoAccessToken('')
+      setMercadoPagoAccountLabel(result.settings.account_label ?? '')
+      setFeedback({ type: 'success', message: result.message })
+      router.refresh()
+    })
+  }
 
   const resetHorarios = () => {
     const normalizedDefault = normalizeHorarios(defaultHorariosCentro)
@@ -750,6 +863,111 @@ export function CentroManager({
           </div>
         </section>
       </div>
+
+      <section id="mercado-pago" className="agendix-surface scroll-mt-24 overflow-hidden rounded-2xl">
+        <div className="flex flex-col gap-3 border-b border-slate-200/80 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/70">
+              <CreditCard size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="text-sm font-medium text-slate-800">
+                Mercado Pago del centro
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Los links de pago de pacientes se crean con la cuenta configurada aquí.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={mercadoPagoSettings.configured ? 'green' : 'slate'}>
+              {mercadoPagoSettings.configured ? 'Activo' : 'Pendiente'}
+            </Badge>
+            <Badge tone={mercadoPagoSettings.source === 'environment' ? 'orange' : 'slate'}>
+              {mercadoPagoSourceLabel(mercadoPagoSettings)}
+            </Badge>
+          </div>
+        </div>
+
+        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-4">
+            <Field label="Public key">
+              <input
+                type="text"
+                className="agendix-input"
+                placeholder="APP_USR-..."
+                value={mercadoPagoPublicKey}
+                disabled={!canEditCentro || isPending}
+                onChange={(event) => setMercadoPagoPublicKey(event.target.value)}
+              />
+            </Field>
+            <Field
+              label="Access token"
+              hint={maskedTokenLabel(mercadoPagoSettings.source === 'organization')}
+            >
+              <input
+                type="password"
+                className="agendix-input"
+                placeholder="APP_USR-..."
+                value={mercadoPagoAccessToken}
+                disabled={!canEditCentro || isPending}
+                onChange={(event) => setMercadoPagoAccessToken(event.target.value)}
+              />
+            </Field>
+            <Field label="Nombre de referencia" hint="opcional">
+              <input
+                type="text"
+                className="agendix-input"
+                placeholder="Cuenta Mercado Pago del centro"
+                value={mercadoPagoAccountLabel}
+                disabled={!canEditCentro || isPending}
+                onChange={(event) => setMercadoPagoAccountLabel(event.target.value)}
+              />
+            </Field>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={onMercadoPagoSubmit}
+                disabled={!canEditCentro || isPending}
+              >
+                <KeyRound size={16} aria-hidden="true" />
+                Guardar Mercado Pago
+              </Button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 text-sm">
+            <h3 className="font-medium text-slate-800">Destino de los cobros</h3>
+            <div className="mt-4 space-y-3">
+              <InfoRow
+                icon={CreditCard}
+                label="Cuenta usada"
+                value={mercadoPagoSourceLabel(mercadoPagoSettings)}
+              />
+              <InfoRow
+                icon={KeyRound}
+                label="Public key"
+                value={mercadoPagoSettings.public_key ?? 'Sin public key'}
+              />
+              <InfoRow
+                icon={CheckCircle2}
+                label="Estado"
+                value={
+                  mercadoPagoSettings.configured
+                    ? 'Lista para crear links'
+                    : 'Configura credenciales'
+                }
+              />
+            </div>
+            {!canEditCentro && (
+              <p className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600">
+                Tu rol actual es {roleLabel(rol)}. Solo administradores pueden cambiar
+                estas credenciales.
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section id="recordatorios" className="agendix-surface scroll-mt-24 overflow-hidden rounded-2xl">
         <div className="flex flex-col gap-3 border-b border-slate-200/80 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">

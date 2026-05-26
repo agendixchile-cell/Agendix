@@ -1,11 +1,16 @@
 import { createHmac } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   mapMercadoPagoStatus,
+  mercadoPagoProvider,
   verifyMercadoPagoWebhookSignature,
 } from '@/lib/payments/providers/mercado-pago'
 
 describe('patient payment providers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('maps Mercado Pago statuses to patient payment statuses', () => {
     expect(mapMercadoPagoStatus('approved')).toBe('approved')
     expect(mapMercadoPagoStatus('pending')).toBe('pending')
@@ -41,5 +46,44 @@ describe('patient payment providers', () => {
         webhookSecret: secret,
       })
     ).toBe(false)
+  })
+
+  it('creates Mercado Pago preferences with the organization access token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'preference-1',
+        init_point: 'https://mercadopago.cl/checkout/preference-1',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await mercadoPagoProvider.createPaymentLink({
+      paymentId: 'payment-1',
+      organizationId: 'org-1',
+      organizationName: 'Centro Test',
+      providerAccessToken: 'ORG_ACCESS_TOKEN',
+      patientId: 'patient-1',
+      amount: 25000,
+      currency: 'CLP',
+      description: 'Consulta',
+      successUrl: 'https://app.agendixchile.cl/success',
+      failureUrl: 'https://app.agendixchile.cl/failure',
+      pendingUrl: 'https://app.agendixchile.cl/pending',
+      webhookUrl: 'https://app.agendixchile.cl/api/webhooks/mercado-pago',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.mercadopago.com/checkout/preferences',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer ORG_ACCESS_TOKEN',
+        }),
+      })
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.notification_url).toBe(
+      'https://app.agendixchile.cl/api/webhooks/mercado-pago?patient_payment_id=payment-1'
+    )
   })
 })

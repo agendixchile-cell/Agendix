@@ -32,6 +32,14 @@ export type HorarioCentro = {
 export type RecordatoriosConfig =
   Database['public']['Tables']['configuracion_recordatorios']['Row']
 
+export type MercadoPagoSettingsStatus = {
+  configured: boolean
+  source: 'organization' | 'environment' | 'missing'
+  public_key: string | null
+  account_label: string | null
+  updated_at: string | null
+}
+
 export type CentroActionState =
   | {
       ok: true
@@ -49,6 +57,10 @@ export type HorariosActionState =
 
 export type RecordatoriosActionState =
   | { ok: true; message: string; recordatorios?: RecordatoriosConfig }
+  | { ok: false; message: string }
+
+export type MercadoPagoSettingsActionState =
+  | { ok: true; message: string; settings: MercadoPagoSettingsStatus }
   | { ok: false; message: string }
 
 export type CentroMembership = {

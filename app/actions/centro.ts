@@ -11,9 +11,11 @@ import {
 import {
   centroSchema,
   horariosCentroSchema,
+  mercadoPagoSettingsSchema,
   recordatoriosCentroSchema,
   type CentroFormValues,
   type HorariosCentroFormValues,
+  type MercadoPagoSettingsFormValues,
   type RecordatoriosCentroFormValues,
 } from '@/lib/centro/validation'
 import { defaultHorariosCentro } from '@/lib/centro/horarios'
@@ -22,11 +24,15 @@ import type {
   CentroConfig,
   HorarioCentro,
   HorariosActionState,
+  MercadoPagoSettingsActionState,
+  MercadoPagoSettingsStatus,
   RecordatoriosActionState,
   RecordatoriosConfig,
 } from '@/lib/centro/types'
 import { getAdminCentroId } from '@/lib/supabase/get-centro-id'
 import { DEFAULT_EMAIL_REMINDER_HOURS_BEFORE } from '@/lib/reminders/schedule'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getMercadoPagoStatusForOrganization } from '@/lib/payments/provider-settings'
 
 const centroSelect =
   'id,nombre,slug,rut,direccion,telefono,email,logo_url,activo,created_at,updated_at'
@@ -35,6 +41,14 @@ const defaultEmailBodyTemplate =
   'Hola {{paciente_nombre}}, te recordamos que tienes una hora agendada en {{centro_nombre}}.\n\nServicio: {{servicio_nombre}}\nProfesional: {{profesional_nombre}}\nFecha y hora: {{fecha_hora}}\n\nConfirma tu asistencia desde el boton del correo. Si necesitas cambiar tu hora, contacta directamente al centro.'
 const recordatoriosSelect =
   'id,centro_id,email_enabled,whatsapp_enabled,email_hours_before,whatsapp_hours_before,whatsapp_mode,email_subject_template,email_body_template,created_at,updated_at'
+
+const missingMercadoPagoSettings: MercadoPagoSettingsStatus = {
+  configured: false,
+  source: 'missing',
+  public_key: null,
+  account_label: null,
+  updated_at: null,
+}
 
 function defaultRecordatoriosConfig(centroId: string): RecordatoriosConfig {
   const now = new Date().toISOString()
@@ -155,6 +169,101 @@ export async function updateCentroAction(
     ok: true,
     message: 'Configuración del centro actualizada.',
     centro: data as CentroConfig,
+  }
+}
+
+export async function getMercadoPagoSettings(
+  centroId: string
+): Promise<MercadoPagoSettingsStatus> {
+  const adminSupabase = createAdminClient()
+
+  if (!adminSupabase) return missingMercadoPagoSettings
+
+  const settings = await getMercadoPagoStatusForOrganization(
+    adminSupabase,
+    centroId
+  )
+
+  return {
+    configured: settings.configured,
+    source: settings.source,
+    public_key: settings.publicKey,
+    account_label: settings.accountLabel,
+    updated_at: settings.updatedAt,
+  }
+}
+
+export async function updateMercadoPagoSettingsAction(
+  values: MercadoPagoSettingsFormValues
+): Promise<MercadoPagoSettingsActionState> {
+  const parsed = mercadoPagoSettingsSchema.safeParse(values)
+
+  if (!parsed.success) {
+    return { ok: false, message: 'Revisa las credenciales de Mercado Pago.' }
+  }
+
+  if (isDemoMode()) {
+    return {
+      ok: true,
+      message: 'Mercado Pago actualizado en modo demo.',
+      settings: {
+        configured: true,
+        source: 'organization',
+        public_key: parsed.data.public_key.trim(),
+        account_label: parsed.data.account_label?.trim() || null,
+        updated_at: new Date().toISOString(),
+      },
+    }
+  }
+
+  const { supabase, centroId, error } = await getAdminCentroId(
+    'Mercado Pago del centro'
+  )
+
+  if (error || !centroId) {
+    return { ok: false, message: error ?? 'No pudimos encontrar tu centro.' }
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const adminSupabase = createAdminClient()
+
+  if (!adminSupabase || !user) {
+    return { ok: false, message: 'No pudimos guardar Mercado Pago del centro.' }
+  }
+
+  const payload = {
+    organization_id: centroId,
+    provider: 'mercado_pago',
+    status: 'active',
+    public_key: parsed.data.public_key.trim(),
+    access_token: parsed.data.access_token.trim(),
+    account_label: parsed.data.account_label?.trim() || null,
+    updated_by: user.id,
+    created_by: user.id,
+  }
+
+  const { error: upsertError } = await adminSupabase
+    .from('organization_payment_provider_settings')
+    .upsert(payload, { onConflict: 'organization_id,provider' })
+
+  if (upsertError) {
+    return {
+      ok: false,
+      message: 'No pudimos guardar las credenciales de Mercado Pago.',
+    }
+  }
+
+  const settings = await getMercadoPagoSettings(centroId)
+
+  revalidatePath('/centro')
+  revalidatePath('/pagos')
+
+  return {
+    ok: true,
+    message: 'Mercado Pago del centro quedó configurado.',
+    settings,
   }
 }
 

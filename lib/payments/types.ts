@@ -15,6 +15,7 @@ export type CreatePaymentLinkInput = {
   paymentId: string
   organizationId: string
   organizationName: string
+  providerAccessToken?: string | null
   patientId: string
   patientEmail?: string | null
   patientName?: string | null

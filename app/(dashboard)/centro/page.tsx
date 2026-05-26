@@ -7,6 +7,7 @@ import { getDemoPlanDataset } from '@/lib/demo-plan-data'
 import { createClient } from '@/lib/supabase/server'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
 import { getHorariosCentro, getRecordatoriosCentro } from '@/app/actions/centro'
+import { getMercadoPagoSettings } from '@/app/actions/centro'
 import { getDemoPlanId } from '@/lib/subscription/server'
 
 type MembershipQueryRow = {
@@ -26,6 +27,13 @@ export default async function CentroPage() {
         initialCentro={dataset.centro}
         initialHorarios={dataset.horarios}
         initialRecordatorios={dataset.recordatorios}
+        initialMercadoPagoSettings={{
+          configured: false,
+          source: 'missing',
+          public_key: null,
+          account_label: null,
+          updated_at: null,
+        }}
         rol="admin"
         demoMode
         demoPlanId={demoPlanId}
@@ -62,6 +70,13 @@ export default async function CentroPage() {
         }}
         initialHorarios={defaultHorariosCentro}
         initialRecordatorios={demoRecordatoriosConfig}
+        initialMercadoPagoSettings={{
+          configured: false,
+          source: 'missing',
+          public_key: null,
+          account_label: null,
+          updated_at: null,
+        }}
         rol="profesional"
         demoMode={false}
         loadError="No pudimos cargar la configuración del centro."
@@ -80,6 +95,13 @@ export default async function CentroPage() {
         }}
         initialHorarios={defaultHorariosCentro}
         initialRecordatorios={demoRecordatoriosConfig}
+        initialMercadoPagoSettings={{
+          configured: false,
+          source: 'missing',
+          public_key: null,
+          account_label: null,
+          updated_at: null,
+        }}
         rol="profesional"
         demoMode={false}
         loadError={`No encontramos un centro asociado a ${user.email ?? demoUser.nombre}.`}
@@ -87,9 +109,10 @@ export default async function CentroPage() {
     )
   }
 
-  const [horarios, recordatorios] = await Promise.all([
+  const [horarios, recordatorios, mercadoPagoSettings] = await Promise.all([
     getHorariosCentro(membership.centros.id),
     getRecordatoriosCentro(membership.centros.id),
+    getMercadoPagoSettings(membership.centros.id),
   ])
 
   return (
@@ -97,6 +120,7 @@ export default async function CentroPage() {
       initialCentro={membership.centros}
       initialHorarios={horarios}
       initialRecordatorios={recordatorios}
+      initialMercadoPagoSettings={mercadoPagoSettings}
       rol={membership.rol}
       demoMode={false}
     />

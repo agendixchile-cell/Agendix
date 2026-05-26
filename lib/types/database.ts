@@ -1089,6 +1089,76 @@ export interface Database {
           },
         ]
       }
+      organization_payment_provider_settings: {
+        Row: {
+          id: string
+          organization_id: string
+          provider: string
+          status: string
+          public_key: string | null
+          access_token: string | null
+          external_account_id: string | null
+          account_label: string | null
+          metadata: Json
+          created_by: string | null
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          provider: string
+          status?: string
+          public_key?: string | null
+          access_token?: string | null
+          external_account_id?: string | null
+          account_label?: string | null
+          metadata?: Json
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          provider?: string
+          status?: string
+          public_key?: string | null
+          access_token?: string | null
+          external_account_id?: string | null
+          account_label?: string | null
+          metadata?: Json
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'organization_payment_provider_settings_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'centros'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'organization_payment_provider_settings_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'organization_payment_provider_settings_updated_by_fkey'
+            columns: ['updated_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       patient_payments: {
         Row: {
           id: string

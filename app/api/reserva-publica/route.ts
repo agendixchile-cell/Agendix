@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { publicBookingRequestSchema } from '@/lib/booking/validation'
 import type { PublicBookingResult } from '@/lib/booking/types'
 import { getPaymentProvider } from '@/lib/payments/payment-service'
+import { getMercadoPagoCredentialsForOrganization } from '@/lib/payments/provider-settings'
 import { PaymentProviderError } from '@/lib/payments/types'
 import { calculateReservationDateRange } from '@/lib/reservas/duration'
 import {
@@ -413,10 +414,23 @@ export async function POST(request: Request) {
 
     try {
       const provider = getPaymentProvider('mercado_pago')
+      const providerCredentials = await getMercadoPagoCredentialsForOrganization(
+        supabase,
+        values.centro_id,
+        { allowEnvironmentFallback: false }
+      )
+
+      if (!providerCredentials.configured) {
+        throw new PaymentProviderError(
+          'El centro aún no tiene Mercado Pago configurado.'
+        )
+      }
+
       const paymentLink = await provider.createPaymentLink({
         paymentId: patientPayment.id,
         organizationId: values.centro_id,
         organizationName: centro.nombre,
+        providerAccessToken: providerCredentials.accessToken,
         patientId: paciente.id,
         patientEmail: paciente.email,
         patientName: [paciente.nombre, paciente.apellido]

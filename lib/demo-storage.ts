@@ -5,6 +5,7 @@ export type DemoStorageResource =
   | 'centro'
   | 'fichas-clinicas'
   | 'horarios-centro'
+  | 'mercado-pago-settings'
   | 'pacientes'
   | 'profesionales'
   | 'recordatorios'
@@ -19,6 +20,7 @@ const legacyBaseKeys: Record<DemoStorageResource, string> = {
   centro: 'agendix-demo-centro',
   'fichas-clinicas': 'agendix-demo-fichas-clinicas',
   'horarios-centro': 'agendix-centro-horarios',
+  'mercado-pago-settings': 'agendix-demo-mercado-pago-settings',
   pacientes: 'agendix-demo-pacientes',
   profesionales: 'agendix-demo-profesionales',
   recordatorios: 'agendix-demo-recordatorios',

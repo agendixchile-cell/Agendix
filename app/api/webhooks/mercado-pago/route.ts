@@ -4,6 +4,7 @@ import {
   mapMercadoPagoStatus,
   verifyMercadoPagoWebhookSignature,
 } from '@/lib/payments/providers/mercado-pago'
+import { getMercadoPagoCredentialsForOrganization } from '@/lib/payments/provider-settings'
 import { sendProfessionalBookingEmail } from '@/lib/reminders/email'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -63,6 +64,16 @@ function paymentIdFromRequest(
     url.searchParams.get('id') ??
     url.searchParams.get('payment_id') ??
     (payload.data?.id == null ? null : String(payload.data.id))
+  )
+}
+
+function patientPaymentIdFromRequest(request: Request) {
+  const url = new URL(request.url)
+
+  return (
+    url.searchParams.get('patient_payment_id') ??
+    url.searchParams.get('external_reference') ??
+    url.searchParams.get('payment_id')
   )
 }
 
@@ -184,18 +195,40 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Sin ID de pago.' }, { status: 400 })
   }
 
-  const providerPayment = await getMercadoPagoPayment(providerPaymentId)
+  const hintedPatientPaymentId = patientPaymentIdFromRequest(request)
+  const hintedPatientPaymentQuery = hintedPatientPaymentId
+    ? await supabase
+        .from('patient_payments')
+        .select('id,organization_id,reservation_id,status')
+        .eq('id', hintedPatientPaymentId)
+        .maybeSingle()
+    : { data: null }
+
+  const hintedPatientPayment = hintedPatientPaymentQuery.data
+  const credentials = hintedPatientPayment?.organization_id
+    ? await getMercadoPagoCredentialsForOrganization(
+        supabase,
+        hintedPatientPayment.organization_id
+      )
+    : null
+
+  const providerPayment = await getMercadoPagoPayment(
+    providerPaymentId,
+    credentials?.accessToken ?? null
+  )
   const externalReference = providerPayment.external_reference
 
   if (!externalReference) {
     return NextResponse.json({ ok: true, ignored: true })
   }
 
-  const { data: patientPayment } = await supabase
-    .from('patient_payments')
-    .select('id,reservation_id,status')
-    .eq('id', externalReference)
-    .maybeSingle()
+  const { data: patientPayment } = hintedPatientPayment
+    ? { data: hintedPatientPayment }
+    : await supabase
+        .from('patient_payments')
+        .select('id,organization_id,reservation_id,status')
+        .eq('id', externalReference)
+        .maybeSingle()
 
   if (!patientPayment) {
     return NextResponse.json({ ok: true, ignored: true })

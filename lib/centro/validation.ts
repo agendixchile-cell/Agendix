@@ -109,6 +109,27 @@ export const recordatoriosCentroSchema = z.object({
     .max(1600, 'El mensaje es demasiado largo'),
 })
 
+export const mercadoPagoSettingsSchema = z.object({
+  public_key: z
+    .string()
+    .trim()
+    .min(10, 'Ingresa la public key de Mercado Pago')
+    .max(180, 'La public key es demasiado larga'),
+  access_token: z
+    .string()
+    .trim()
+    .min(20, 'Ingresa el access token de Mercado Pago')
+    .max(260, 'El access token es demasiado largo'),
+  account_label: z
+    .string()
+    .trim()
+    .max(120, 'El nombre de referencia es demasiado largo')
+    .optional(),
+})
+
 export type CentroFormValues = z.infer<typeof centroSchema>
 export type HorariosCentroFormValues = z.infer<typeof horariosCentroSchema>
 export type RecordatoriosCentroFormValues = z.infer<typeof recordatoriosCentroSchema>
+export type MercadoPagoSettingsFormValues = z.infer<
+  typeof mercadoPagoSettingsSchema
+>

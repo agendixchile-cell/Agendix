@@ -26,16 +26,16 @@ type MercadoPagoPaymentResponse = {
   date_approved?: string | null
 }
 
-function accessToken() {
-  return process.env.MERCADO_PAGO_ACCESS_TOKEN
+function accessToken(override?: string | null) {
+  return override ?? process.env.MERCADO_PAGO_ACCESS_TOKEN
 }
 
 export function isMercadoPagoConfigured() {
   return Boolean(accessToken())
 }
 
-function assertMercadoPagoConfigured() {
-  if (!accessToken()) {
+function assertMercadoPagoConfigured(token?: string | null) {
+  if (!accessToken(token)) {
     throw new PaymentProviderError(
       'Falta configurar MERCADO_PAGO_ACCESS_TOKEN para generar links de pago.'
     )
@@ -101,12 +101,17 @@ export function verifyMercadoPagoWebhookSignature({
   return timingSafeEqual(expectedBuffer, receivedBuffer)
 }
 
-export async function getMercadoPagoPayment(paymentId: string) {
-  assertMercadoPagoConfigured()
+export async function getMercadoPagoPayment(
+  paymentId: string,
+  providerAccessToken?: string | null
+) {
+  const token = accessToken(providerAccessToken)
+
+  assertMercadoPagoConfigured(token)
 
   const response = await fetch(`${mercadoPagoApiBaseUrl}/v1/payments/${paymentId}`, {
     headers: {
-      Authorization: `Bearer ${accessToken()}`,
+      Authorization: `Bearer ${token}`,
     },
     cache: 'no-store',
   })
@@ -126,7 +131,12 @@ export const mercadoPagoProvider: PaymentProviderClient = {
   async createPaymentLink(
     input: CreatePaymentLinkInput
   ): Promise<CreatePaymentLinkOutput> {
-    assertMercadoPagoConfigured()
+    const token = accessToken(input.providerAccessToken)
+
+    assertMercadoPagoConfigured(token)
+
+    const notificationUrl = new URL(input.webhookUrl)
+    notificationUrl.searchParams.set('patient_payment_id', input.paymentId)
 
     const body = {
       items: [
@@ -149,7 +159,7 @@ export const mercadoPagoProvider: PaymentProviderClient = {
         pending: input.pendingUrl,
       },
       auto_return: 'approved',
-      notification_url: input.webhookUrl,
+      notification_url: notificationUrl.toString(),
       external_reference: input.paymentId,
       expires: Boolean(input.expiresAt),
       expiration_date_to: input.expiresAt ?? undefined,
@@ -165,7 +175,7 @@ export const mercadoPagoProvider: PaymentProviderClient = {
     const response = await fetch(`${mercadoPagoApiBaseUrl}/checkout/preferences`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${accessToken()}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
