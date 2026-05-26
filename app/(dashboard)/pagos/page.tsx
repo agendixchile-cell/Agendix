@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation'
-import { CreditCard, Plus } from 'lucide-react'
-import Link from 'next/link'
+import { CreditCard } from 'lucide-react'
 import type { ReactNode } from 'react'
 import {
   PatientPaymentsManager,
@@ -10,7 +9,6 @@ import {
   type PaymentServiceOption,
 } from '@/components/payments/patient-payments-manager'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { demoUser, isDemoMode } from '@/lib/auth/demo'
 import { getDemoPlanDataset } from '@/lib/demo-plan-data'
@@ -376,14 +374,7 @@ function PageShell({
         eyebrow={organizationName}
         icon={CreditCard}
         meta={demoMode ? <Badge tone="slate">Modo demo</Badge> : undefined}
-      >
-        <Button asChild>
-          <Link href="/pagos?new=1">
-            <Plus size={16} aria-hidden="true" />
-            Nuevo cobro
-          </Link>
-        </Button>
-      </PageHeader>
+      />
 
       {children}
     </div>
