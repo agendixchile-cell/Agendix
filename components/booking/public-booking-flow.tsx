@@ -1120,10 +1120,11 @@ function ContactStep({
             description={
               canPayOnline
                 ? 'Genera un link seguro de Mercado Pago para completar el pago.'
-                : 'Disponible cuando el servicio tiene precio publicado.'
+                : 'Agrega un precio al servicio para habilitar Mercado Pago.'
             }
             price={selectedService?.precio ?? null}
             disabled={!canPayOnline}
+            disabledLabel="Servicio sin precio publicado"
             register={form.register('payment_method')}
           />
         </div>
@@ -1194,6 +1195,7 @@ function PaymentOption({
   description,
   price,
   disabled = false,
+  disabledLabel = 'No disponible',
   register,
 }: {
   value: PublicPaymentMethod
@@ -1202,6 +1204,7 @@ function PaymentOption({
   description: string
   price: number | null
   disabled?: boolean
+  disabledLabel?: string
   register: UseFormRegisterReturn<'payment_method'>
 }) {
   return (
@@ -1230,7 +1233,7 @@ function PaymentOption({
             {description}
           </span>
           <span className="mt-2 block text-xs font-semibold text-[#F9735B]">
-            {disabled ? 'Disponible en una próxima etapa' : formatPrice(price, 'CLP')}
+            {disabled ? disabledLabel : formatPrice(price, 'CLP')}
           </span>
         </span>
         <span
